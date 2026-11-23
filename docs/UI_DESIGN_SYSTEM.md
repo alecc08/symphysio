@@ -67,24 +67,35 @@ whole logging vocabulary; anything else is a preset inside one of them.
 
 `src/components/icons/`: hand-written SVG, no icon library, no emoji.
 
-- **Duotone**: a soft-filled body (`fill: currentColor; fill-opacity: .13`) plus
-  `currentColor` strokes at 2 (primary) / 1.3 (detail, 40–60 % opacity). Three
-  weights give depth without colour noise.
+**The rule is that a glyph must be nameable in one word by someone who has never
+opened the app.** An earlier set was thematic but abstract — a pelvic "hammock
+lifting a load" for physio, a body map with a pelvic flare for symptoms — and in
+user testing it read as a cup, a balloon, a sparkle and a pair of right feet. It
+was replaced. What ships now:
+
+| Kind | Glyph | Why it wins |
+| --- | --- | --- |
+| Physio | dumbbell with an upward arrow | "exercise, and it gets heavier" — no teaching needed, and progressive loading is the actual concept |
+| Symptoms | body silhouette with a lightning bolt over the sore area | body + bolt is already the universal shorthand for pain; the silhouette is filled so it survives at 44 px |
+| Relief / Meds | thermometer with a snowflake | heat **and** cold therapy in one shape; a heat pack alone read as an inhaler, a pill-and-thermometer pair read as a pharmacy logo |
+| Triggers | a left and a right footprint landing on a support arc | "activity you did" — mirrored on purpose: two same-curve feet look like two right feet |
+
+Craft rules that keep the four a family:
+
+- **Duotone**: a soft-filled body (`fill: currentColor; fill-opacity .16–.2`) plus
+  `currentColor` strokes at 2 (primary) and 1.3 (detail at ~55 % opacity).
 - **Canvas**: heroes on 48×48, compact variants on 24×24, brand mark on 24×24.
 - **`currentColor` only.** No hex inside the glyphs, so dark mode, hover and
   active states are one class change.
-- **Motifs are pelvic-floor-first, not gym clip-art**: a hammock lifting a load
-  (physio), a body map with a flare at the pelvic floor (symptoms), a drop over
-  heat waves (relief), footprints landing on the hammock (triggers). The
-  hammock recurs, which is what makes the set read as one family.
-- **Geometry is reviewed as pixels**, not as paths: candidates are rendered at
-  96 px and 44 px on both light and dark tint chips and compared before anything
-  ships. At 44 px, thin detail layers disappear and closed shapes read as
-  balloons, which is why the hammock is open at the top and the flare is a solid
-  star.
-- The app icon (`public/icons/app-icon.svg` → `scripts/make_icons.py`) uses the
-  same hammock mark with a rose lift chevron; PNG sizes (192, 512, maskable 512,
-  apple-touch 180) are generated, never hand-edited.
+- **Detail layers are allowed to be decorative, shapes are not.** Thin inner
+  arcs are fine; a shape that only makes sense with a legend is not.
+- **Geometry is reviewed as pixels, not as paths.** Candidates go on a board
+  rendered at 88 px and 44 px on light *and* dark tint chips — that is where the
+  abstract set was rejected and where "two right feet" was caught.
+- The brand mark (`BrandMark`, and the app icon) deliberately keeps the abstract
+  hammock: a logo can be a idea, a tile icon cannot. PNG icon sizes (192, 512,
+  maskable 512, apple-touch 180) are generated from `app-icon.svg` by
+  `scripts/make_icons.py`, never hand-edited.
 
 ## Motion
 

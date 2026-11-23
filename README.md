@@ -111,13 +111,19 @@ audit and a container smoke test.
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, headers, session and password handling |
 | [docs/DEPLOYING.md](docs/DEPLOYING.md) | Container, reverse proxy, environment variables |
 | [docs/BACKUPS.md](docs/BACKUPS.md) | Backup and restore, data portability |
-| [docs/UI_DESIGN_SYSTEM.md](docs/UI_DESIGN_SYSTEM.md) | Palette, tiles, icon grid, motion rules |
+| [docs/UI_DESIGN_SYSTEM.md](docs/UI_DESIGN_SYSTEM.md) | Palette, tiles, icon rules, motion rules |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | What is next, designed before it is built |
 
 ## Status
 
 Phase 1 and 2 are implemented and covered by tests; Phase 3 ships the insights
-charts and lag correlations (charts are hand-built, no chart dependency). WebAuthn
-passkeys are the next planned addition.
+charts and lag correlations (charts are hand-built, no chart dependency).
+
+Next, in [docs/ROADMAP.md](docs/ROADMAP.md): **email confirmation via
+[Resend](https://resend.com)** — a hashed single-use token, a 24 h link, a
+soft "confirm your email" gate that never locks you out of your own diary if
+SMTP is down, and the same plumbing reused for password reset. WebAuthn passkeys
+follow.
 
 ## License
 
