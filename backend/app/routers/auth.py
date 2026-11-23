@@ -82,6 +82,18 @@ def _enforce_limit(request: Request, key: str) -> None:
         )
 
 
+def _record_failure(request: Request, key: str) -> None:
+    """Charge the limiter for an attempt that did not create an account.
+
+    The limiter only counts what it is told about: without this the `register:`
+    window is never filled and the check above can never trip, which would leave
+    account creation — the one endpoint that pays for an Argon2 hash — unmetered.
+    """
+    limiter = request.app.state.rate_limiter
+    if limiter:
+        limiter.record_failure(key)
+
+
 async def _issue_confirmation(
     db: Database, settings: Settings, mailer: Mailer, user_id: str, email: str
 ) -> tuple[str, int] | None:
@@ -116,13 +128,24 @@ async def register(
     settings: Annotated[Settings, Depends(get_settings)],
     mailer: MailerDep,
 ) -> AuthOut:
-    _enforce_limit(request, f"register:{_client_ip(request)}")
+    ip = _client_ip(request)
+    _enforce_limit(request, f"register:{ip}")
+    if not settings.allow_registration:
+        # Charged to the limiter like any other rejected attempt: a closed door
+        # should cost a scanner the same budget as an open one.
+        _record_failure(request, f"register:{ip}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is closed on this instance.",
+        )
     problems = check_password(payload.email, payload.password)
     if problems:
+        _record_failure(request, f"register:{ip}")
         raise HTTPException(status_code=422, detail=problems[0])
 
     existing = await db.row("SELECT id FROM users WHERE email = ?", (payload.email,))
     if existing is not None:
+        _record_failure(request, f"register:{ip}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with that email already exists.",

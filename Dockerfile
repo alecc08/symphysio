@@ -58,4 +58,11 @@ HEALTHCHECK --interval=30s --timeout=4s --start-period=10s \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
 
 # Run uvicorn straight from the venv: no uv at runtime, no writes outside /data.
-ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+#
+# --no-access-log: uvicorn's request line would record the email-confirmation
+# link the browser opens (`GET /verify?token=…`), putting a live token in
+# `docker logs` and whatever collects them. The API itself is POST/JSON, so what
+# is lost is request timing noise; the reverse proxy in front is the right place
+# to log traffic - and it should mask the `token` parameter (see
+# docs/DEPLOYING.md).
+ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

@@ -50,6 +50,7 @@ class Settings:
     email_verification_ttl_seconds: int
     email_sends_per_hour: int
     email_confirmation: str  # "off" | "optional" | "required"
+    allow_registration: bool = True  # keyword default: see get_settings
 
     @property
     def session_cookie(self) -> str:
@@ -147,4 +148,8 @@ def get_settings() -> Settings:
         email_verification_ttl_seconds=max(300, _env_int("SYPHYSIO_EMAIL_TTL_SECONDS", 86_400)),
         email_sends_per_hour=max(1, _env_int("SYPHYSIO_EMAIL_SENDS_PER_HOUR", 3)),
         email_confirmation=_email_confirmation_mode(),
+        # Open by default: the first account has to come from somewhere. A
+        # instance that is reachable from the internet should close this once
+        # its own accounts exist - see docs/DEPLOYING.md.
+        allow_registration=_env_bool("SYPHYSIO_ALLOW_REGISTRATION", True),
     )
