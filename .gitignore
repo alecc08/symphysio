@@ -12,6 +12,7 @@ venv/
 node_modules/
 frontend/dist/
 frontend/.vite/
+*.tsbuildinfo
 *.local
 
 # App data (SQLite lives here in dev and in the container bind mount)
@@ -36,4 +37,6 @@ data/
 .playwright-mcp
 
 # Generated
-frontend/public/icons/generated/
+# Screenshots: the browser tools write into the project directory, and none of
+# them belong in history. Logo/icon review boards are scratch, not artifacts.
+/*.png
