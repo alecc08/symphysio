@@ -86,7 +86,7 @@ async def authenticate(db: Database, settings: Settings, token: str | None) -> A
         return None
     digest = token_digest(token)
     row = await db.row(
-        "SELECT s.expires_at_utc, u.id, u.email, u.created_at_utc"
+        "SELECT s.expires_at_utc, u.id, u.email, u.created_at_utc, u.is_verified"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ? AND s.expires_at_utc > ?",
         (digest, now_utc()),
@@ -103,7 +103,12 @@ async def authenticate(db: Database, settings: Settings, token: str | None) -> A
             (expires_at, digest),
         )
         renewed = True
-    user = {"id": row["id"], "email": row["email"], "created_at_utc": row["created_at_utc"]}
+    user = {
+        "id": row["id"],
+        "email": row["email"],
+        "created_at_utc": row["created_at_utc"],
+        "is_verified": bool(row["is_verified"]),
+    }
     return Authenticated(user=user, token=token, expires_at_utc=expires_at, renewed=renewed)
 
 
@@ -167,7 +172,12 @@ def new_csrf_token() -> str:
 
 
 def user_public(user: dict[str, Any]) -> dict[str, Any]:
-    return {"id": user["id"], "email": user["email"], "created_at_utc": user["created_at_utc"]}
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "created_at_utc": user["created_at_utc"],
+        "is_verified": bool(user.get("is_verified", True)),
+    }
 
 
 __all__ = [

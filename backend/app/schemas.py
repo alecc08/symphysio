@@ -63,10 +63,17 @@ class LoginRequest(StrictModel):
         return cleaned
 
 
+class VerifyRequest(StrictModel):
+    """A confirmation token posted by the SPA from the emailed link."""
+
+    token: Annotated[str, Field(min_length=20, max_length=512)]
+
+
 class UserOut(StrictModel):
     id: str
     email: str
     created_at_utc: int
+    is_verified: bool
 
 
 class AuthOut(StrictModel):

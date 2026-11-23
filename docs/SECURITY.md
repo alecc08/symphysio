@@ -55,6 +55,39 @@ Double-submit, enforced by middleware before routing:
   `X-Forwarded-For` (Caddy, Traefik, nginx), which is why the compose file binds
   to `127.0.0.1`: expose uvicorn directly and a client can forge the header.
 
+## Email confirmation tokens
+
+The same shape as sessions, because the threat is the same: a long random value
+in flight, only its SHA-256 digest at rest.
+
+- 256-bit token (`secrets.token_urlsafe(32)`), stored as `sha256(token)` in
+  `email_verifications.token_hash`, TTL `SYPHYSIO_EMAIL_TTL_SECONDS` (24 h),
+  single use (`used_at_utc`).
+- The token is **never in a path**. The link is `/verify?token=…`; the SPA posts
+  it in a JSON body to `POST /api/v1/auth/verify` and rewrites the address bar
+  before anything else runs, so the token does not linger in history, in a
+  `Referer`, or in an access log's request line.
+- Lookup is by digest, so a forged token matches no row: guessing is bounded by
+  the IP counter on `/auth/*`, not by a per-account budget an attacker can probe
+  to enumerate accounts.
+- The link host comes from `SYPHYSIO_PUBLIC_URL`, never from the request's
+  `Host` header, so a poisoned header cannot mail an attacker-controlled domain
+  to your users.
+- **Send budget:** `SYPHYSIO_EMAIL_SENDS_PER_HOUR` (3) per account, counted from
+  the database rather than memory, so it survives a restart and cannot be
+  restarted into bypassing. Resending expires the previous row instead of
+  deleting it, so old rows keep counting and no second live link escapes.
+- **No health data in email.** `app/emails.py` carries a link and nothing else:
+  no symptom names, no counts, no entry dates, no images or tracking pixels.
+  The HTML part is escaped and hand-built — no templating engine in the
+  dependency set.
+- Sends are background tasks after the response, so a slow or dead mail provider
+  cannot hang or fail a sign-up. A failed send leaves the account usable in soft
+  mode and the banner offers a resend.
+- **Refused configuration:** `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=1` without
+  email configured aborts startup rather than creating accounts nobody can
+  unlock.
+
 ## Passwords
 
 - Argon2id, `time_cost=3`, `memory_cost=64 MiB`, `parallelism=4`, 32-byte hash,
@@ -138,5 +171,5 @@ Cache-Control: no-store
 | Single-worker rate limiting | homelab scale; move the window to Redis for multiple workers |
 | No WebAuthn passkeys | planned; would remove the password path entirely |
 | No at-rest encryption of the SQLite file | relies on LUKS/zfs encryption at the host; SQLCipher would be the in-app answer |
-| Registration reveals existing emails | see Passwords; email verification + hashed-user lookup would fix it |
+| Registration reveals existing emails | `POST /auth/register` answers `409` for a taken address; email verification now exists, so the remaining fix is to always create a pending account and let the mail decide, plus hashed-user lookup |
 | No 2FA | passkeys first; TOTP would need recovery codes, which is a bigger support surface |

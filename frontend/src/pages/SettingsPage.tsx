@@ -38,6 +38,12 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <p className="mt-1.5 text-sm text-muted">
           {session.user?.email} · joined {formatDay(session.user?.created_at_utc ?? 0)}
         </p>
+        {session.user && !session.user.is_verified ? (
+          <p className="mt-2 text-xs font-semibold text-physio-ink">
+            This email is not confirmed yet. Use “Send again” in the strip above — confirmation is
+            what makes password recovery possible later.
+          </p>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"

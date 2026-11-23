@@ -22,6 +22,7 @@ PRAGMA busy_timeout = 5000;     -- one writer at a time, wait rather than error
 
 ```
 users ──┬── sessions
+        ├── email_verifications
         ├── exercise_definitions ──┐
         ├── symptom_definitions  ──┼── exercise_logs / symptom_logs / context_logs
         └── context_definitions  ──┘
@@ -114,6 +115,39 @@ CREATE TABLE sessions (
 A stolen database file therefore does not hand over usable session cookies: the
 hash is unsalted but the input is 256 bits of randomness, so there is nothing to
 brute-force. Passwords are Argon2id (see SECURITY.md).
+
+## Confirmation tokens at rest
+
+`002_email_verification.sql` adds `users.is_verified` / `users.verified_at_utc`
+and one table, with the same discipline as sessions:
+
+```sql
+CREATE TABLE email_verifications (
+  id              TEXT PRIMARY KEY,              -- UUIDv7
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash      TEXT NOT NULL UNIQUE,          -- sha256(token), never the token
+  purpose         TEXT NOT NULL CHECK (purpose IN ('confirm_email', 'password_reset')),
+  created_at_utc  INTEGER NOT NULL,
+  expires_at_utc  INTEGER NOT NULL,
+  used_at_utc     INTEGER                        -- set when consumed (single use)
+);
+CREATE INDEX idx_email_verif_user ON email_verifications(user_id, purpose, expires_at_utc);
+```
+
+- Rows are looked up **by digest**, so a wrong token matches nothing at all —
+  there is no row to burn a guess budget against, and the router's IP counter is
+  the only bound on guessing.
+- `used_at_utc` makes a link single use; an already-used link is a `410`, not a
+  silent success.
+- Requesting a new link **expires** the outstanding rows instead of deleting
+  them, so the per-hour send budget (`SYPHYSIO_EMAIL_SENDS_PER_HOUR`) cannot be
+  dodged by asking for resends, and two inboxes never hold two live links.
+- `is_verified` defaults to **1** so accounts created before the feature exist
+  stay usable; `register` writes an explicit 0 when email is configured.
+- The `purpose` column exists for the password-reset flow that has not been built
+  yet; nothing writes `password_reset` today.
+- Rows are junk once consumed or expired. `main.py` calls `prune_verifications`
+  at startup, which deletes every used row and every row past its expiry.
 
 ## Migrations
 

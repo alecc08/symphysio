@@ -99,6 +99,7 @@ audit and a container smoke test.
 | **History** | Unified chronological feed with filters, inline edit (severity, note, time) and delete with Undo. |
 | **Insights** | Daily counts, severity trend, hour-of-day distribution, top presets, and exercise→symptom lag correlations over a configurable window. |
 | **Settings** | Catalog manager (add / rename / reorder / remove / restore, plus a suggested-preset pool), CSV and JSON export, sign out one or all devices. |
+| **Account** | Optional email confirmation (Resend, or nothing at all): a single-use 24 h link, a reminder banner, and a soft gate that keeps an unconfirmed account usable. |
 | **API** | `/api/v1` JSON only: auth, catalog, logs, timeline, analytics, export. Contract in [docs/API.md](docs/API.md). |
 
 ## Documentation
@@ -111,19 +112,20 @@ audit and a container smoke test.
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, headers, session and password handling |
 | [docs/DEPLOYING.md](docs/DEPLOYING.md) | Container, reverse proxy, environment variables |
 | [docs/BACKUPS.md](docs/BACKUPS.md) | Backup and restore, data portability |
-| [docs/UI_DESIGN_SYSTEM.md](docs/UI_DESIGN_SYSTEM.md) | Palette, tiles, icon rules, motion rules |
+| [docs/UI_DESIGN_SYSTEM.md](docs/UI_DESIGN_SYSTEM.md) | Palette, tiles, icon rules, the brand mark, motion rules |
+| [docs/CREDITS.md](docs/CREDITS.md) | Attribution for the Rod of Asclepius geometry in the logo |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What is next, designed before it is built |
 
 ## Status
 
 Phase 1 and 2 are implemented and covered by tests; Phase 3 ships the insights
-charts and lag correlations (charts are hand-built, no chart dependency).
+charts and lag correlations (charts are hand-built, no chart dependency). Email
+confirmation is built: a hashed single-use token, a 24 h link, and a soft
+"confirm your email" gate that never locks you out of your own diary if mail is
+down or unconfigured.
 
-Next, in [docs/ROADMAP.md](docs/ROADMAP.md): **email confirmation via
-[Resend](https://resend.com)** — a hashed single-use token, a 24 h link, a
-soft "confirm your email" gate that never locks you out of your own diary if
-SMTP is down, and the same plumbing reused for password reset. WebAuthn passkeys
-follow.
+Next, in [docs/ROADMAP.md](docs/ROADMAP.md): **password reset**, on the same
+token plumbing. WebAuthn passkeys follow.
 
 ## License
 

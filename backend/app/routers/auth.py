@@ -1,6 +1,8 @@
-"""Auth endpoints: register, login, logout, session check.
+"""Auth endpoints: register, login, logout, session check, email confirmation.
 
 Rate limited per IP (and per account on login) to blunt password spraying.
+Email confirmation is optional: with no Resend key configured the app stays
+fully usable and every account is treated as verified.
 """
 
 from __future__ import annotations
@@ -8,13 +10,16 @@ from __future__ import annotations
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 
 from ..db import Database
 from ..deps import AuthedUser, get_db, get_settings
+from ..emails import confirmation_message
 from ..ids import new_id, now_utc
+from ..mailer import Mailer, Message
 from ..password_policy import check_password
-from ..schemas import AuthOut, LoginRequest, RegisterRequest, UserOut
+from ..schemas import AuthOut, LoginRequest, RegisterRequest, UserOut, VerifyRequest
 from ..security import (
     clear_session_cookies,
     create_session,
@@ -28,6 +33,13 @@ from ..security import (
 )
 from ..seed import seed_catalog
 from ..settings import Settings
+from ..verification import (
+    CONFIRM_EMAIL,
+    VerifyOutcome,
+    consume_verification,
+    count_recent_sends,
+    create_verification,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -38,6 +50,14 @@ def _client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+def get_mailer(request: Request) -> Mailer:
+    mailer: Mailer = request.app.state.mailer
+    return mailer
+
+
+MailerDep = Annotated[Mailer, Depends(get_mailer)]
 
 
 # Verified instead of a real hash when the account does not exist, so "no such
@@ -62,13 +82,39 @@ def _enforce_limit(request: Request, key: str) -> None:
         )
 
 
+async def _issue_confirmation(
+    db: Database, settings: Settings, mailer: Mailer, user_id: str, email: str
+) -> tuple[str, int] | None:
+    """Create and mail a confirmation link. Returns (token, expiry) or None if capped.
+
+    The send itself is queued as a background task by the caller: the response must
+    not depend on Resend being reachable.
+    """
+    if not settings.email_enabled:
+        return None
+    recent = await count_recent_sends(db, user_id, 3600)
+    if recent >= settings.email_sends_per_hour:
+        return None
+    token = await create_verification(
+        db, user_id, CONFIRM_EMAIL, settings.email_verification_ttl_seconds
+    )
+    return token, now_utc() + settings.email_verification_ttl_seconds
+
+
+async def _deliver(mailer: Mailer, message: Message) -> None:
+    """Background task: never raises, never logs a token or a full address."""
+    await mailer.send(message)
+
+
 @router.post("/register", response_model=AuthOut, status_code=status.HTTP_201_CREATED)
 async def register(
     payload: RegisterRequest,
     request: Request,
     response: Response,
+    background: BackgroundTasks,
     db: Annotated[Database, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    mailer: MailerDep,
 ) -> AuthOut:
     _enforce_limit(request, f"register:{_client_ip(request)}")
     problems = check_password(payload.email, payload.password)
@@ -82,12 +128,33 @@ async def register(
             detail="An account with that email already exists.",
         )
 
+    # Without email there is nothing to confirm, so the account is simply verified;
+    # a LAN deployment with no outbound mail stays fully usable.
+    verified = 0 if settings.email_enabled else 1
     user_id = new_id()
     await db.execute(
-        "INSERT INTO users (id, email, password_hash, created_at_utc) VALUES (?, ?, ?, ?)",
-        (user_id, payload.email, hash_password(payload.password), now_utc()),
+        "INSERT INTO users (id, email, password_hash, created_at_utc, is_verified)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (user_id, payload.email, hash_password(payload.password), now_utc(), verified),
     )
     await seed_catalog(db, user_id)
+
+    issued = await _issue_confirmation(db, settings, mailer, user_id, payload.email)
+    if issued is not None:
+        token, _ = issued
+        background.add_task(_deliver, mailer, confirmation_message(settings, payload.email, token))
+
+    # In hard mode a new account cannot use its session until the link is clicked.
+    if settings.require_email_verification and settings.email_enabled:
+        return AuthOut(
+            user=UserOut(
+                id=user_id,
+                email=payload.email,
+                created_at_utc=await _created_at(db, user_id),
+                is_verified=False,
+            )
+        )
+
     token, expires_at = await create_session(db, user_id, settings)
     set_session_cookies(response, settings, token, expires_at)
     return AuthOut(
@@ -95,6 +162,7 @@ async def register(
             id=user_id,
             email=payload.email,
             created_at_utc=await _created_at(db, user_id),
+            is_verified=bool(verified),
         )
     )
 
@@ -109,15 +177,17 @@ async def login(
     payload: LoginRequest,
     request: Request,
     response: Response,
+    background: BackgroundTasks,
     db: Annotated[Database, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    mailer: MailerDep,
 ) -> AuthOut:
     ip = _client_ip(request)
     _enforce_limit(request, f"login-ip:{ip}")
     _enforce_limit(request, f"login-email:{payload.email}")
 
     row = await db.row(
-        "SELECT id, password_hash, created_at_utc FROM users WHERE email = ?",
+        "SELECT id, password_hash, created_at_utc, is_verified FROM users WHERE email = ?",
         (payload.email,),
     )
     limiter = request.app.state.rate_limiter
@@ -143,10 +213,33 @@ async def login(
             (hash_password(payload.password), row["id"]),
         )
 
+    if settings.require_email_verification and not bool(row["is_verified"]):
+        # Hard mode is opt-in. Send a fresh link so the person is never stuck on
+        # a 403 with no way forward, subject to the same per-hour cap.
+        issued = await _issue_confirmation(db, settings, mailer, str(row["id"]), payload.email)
+        if issued is not None:
+            token, _ = issued
+            background.add_task(
+                _deliver, mailer, confirmation_message(settings, payload.email, token)
+            )
+        # An HTTPException would drop the queued send, so answer with a response
+        # that carries the background task.
+        denial = JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"detail": "Confirm your email first — we have just sent you a new link."},
+        )
+        denial.background = background
+        return denial
+
     token, expires_at = await create_session(db, row["id"], settings)
     set_session_cookies(response, settings, token, expires_at)
     return AuthOut(
-        user=UserOut(id=row["id"], email=payload.email, created_at_utc=int(row["created_at_utc"]))
+        user=UserOut(
+            id=row["id"],
+            email=payload.email,
+            created_at_utc=int(row["created_at_utc"]),
+            is_verified=bool(row["is_verified"]),
+        )
     )
 
 
@@ -183,3 +276,74 @@ async def logout_all(
 @router.get("/me", response_model=AuthOut)
 async def me(user: AuthedUser) -> AuthOut:
     return AuthOut(user=UserOut(**user))
+
+
+@router.post("/verify", status_code=status.HTTP_204_NO_CONTENT)
+async def verify(
+    payload: VerifyRequest,
+    request: Request,
+    db: Annotated[Database, Depends(get_db)],
+) -> Response:
+    """Consume a confirmation token. The token arrives in the JSON body, never in a
+    URL the server logs, so the SPA reads it from ``?token=`` and posts it here."""
+    ip = _client_ip(request)
+    _enforce_limit(request, f"verify:{ip}")
+    limiter = request.app.state.rate_limiter
+
+    outcome = await consume_verification(db, payload.token, CONFIRM_EMAIL)
+    if outcome == VerifyOutcome.OK:
+        if limiter:
+            limiter.record_success(f"verify:{ip}")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # A wrong token matches no row, so guessing is bounded by this counter rather
+    # than by anything stored per token.
+    if limiter:
+        limiter.record_failure(f"verify:{ip}")
+    if outcome == VerifyOutcome.EXPIRED:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="That confirmation link has expired. Request a new one.",
+        )
+    if outcome == VerifyOutcome.USED:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="That confirmation link has already been used.",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="That confirmation link is not valid.",
+    )
+
+
+@router.post("/verify/resend", status_code=status.HTTP_202_ACCEPTED)
+async def verify_resend(
+    request: Request,
+    background: BackgroundTasks,
+    user: AuthedUser,
+    db: Annotated[Database, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    mailer: MailerDep,
+) -> Response:
+    """Re-send the confirmation link. The previous link stops working."""
+    if not settings.email_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email confirmation is not configured on this server.",
+        )
+    if user.get("is_verified"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This account is already confirmed.",
+        )
+    _enforce_limit(request, f"resend:{_client_ip(request)}")
+    issued = await _issue_confirmation(db, settings, mailer, str(user["id"]), str(user["email"]))
+    if issued is None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Only {settings.email_sends_per_hour} emails per hour are sent.",
+            headers=_retry_header(3600),
+        )
+    token, _ = issued
+    background.add_task(_deliver, mailer, confirmation_message(settings, str(user["email"]), token))
+    return Response(status_code=status.HTTP_202_ACCEPTED)

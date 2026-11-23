@@ -95,6 +95,57 @@ is baked into the image. See `.env.example`.
 | `SYPHYSIO_RATE_LIMIT_ATTEMPTS` | `10` | attempts per window, per IP and per email |
 | `SYPHYSIO_RATE_LIMIT_WINDOW` | `900` | sliding window, seconds |
 | `SYPHYSIO_RATE_LIMIT_LOCKOUT` | `900` | lockout after the window fills, seconds |
+| `RESEND_API_KEY` | unset | Resend key; with a sender and a public URL, email switches on |
+| `SYPHYSIO_EMAIL_FROM` | unset | `From:` on confirmation mail, e.g. `Symphysio <confirm@mail.example.org>` |
+| `SYPHYSIO_EMAIL_REPLY_TO` | unset | optional `Reply-To:` |
+| `SYPHYSIO_PUBLIC_URL` | unset | absolute origin used **only** for the link host, e.g. `https://symphysio.example.org` |
+| `SYPHYSIO_MAIL_BACKEND` | `resend` if configured, else `null` | `resend`, `outbox` (write `.eml` files to the data dir, never send) or `null` |
+| `SYPHYSIO_EMAIL_TTL_SECONDS` | `86400` | how long a confirmation link works (floor 300) |
+| `SYPHYSIO_EMAIL_SENDS_PER_HOUR` | `3` | per-account send budget, counted in the database |
+| `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION` | `0` | `1` blocks sign-in until the link is clicked; the server refuses to start with `1` and no email configured |
+
+## Outbound email (optional)
+
+Nothing needs it. With no `RESEND_API_KEY` the mail backend is `null`, every
+account is created confirmed, and a homelab running on a LAN with no route to the
+internet behaves exactly as it did before this feature.
+
+To turn it on with Resend:
+
+1. **Verify a domain** in the Resend dashboard (not just the shared
+   `onboarding@resend.dev` address — that one only mails your own account).
+2. **Publish the SPF and DKIM records** Resend shows you. SPF: a `TXT` record at
+   the sending domain containing `v=spf1 include:amazonses.com ~all`. DKIM: the
+   three-`TXT`-record set under `_resend._domainkey` (or the key selector they
+   show). Resend also offers a DMARC report address; a
+   `_dmarc` `TXT` record with `p=none` is enough to start seeing failures.
+   Skip this and your confirmation mail lands in spam, which looks identical to
+   the feature being broken.
+3. **Create an API key** and put it in the environment as `RESEND_API_KEY`
+   (`docker-compose.yml` reads it from the host environment; it is not
+   committed).
+4. Set `SYPHYSIO_EMAIL_FROM` to an address on that domain and
+   `SYPHYSIO_PUBLIC_URL` to the origin your phone actually reaches. The link host
+   comes from this variable, never from the request's `Host` header, so a reverse
+   proxy in front does not change what lands in the mail.
+5. Leave `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=0` unless you specifically want the
+   hard gate. The soft default is deliberate: a postnatal user whose
+   confirmation mail went to spam should not be locked out of their diary.
+
+Developing without sending anything:
+
+```bash
+SYPHYSIO_MAIL_BACKEND=outbox \
+SYPHYSIO_PUBLIC_URL=https://symphysio.test \
+RESEND_API_KEY=dev_never_real \
+SYPHYSIO_EMAIL_FROM='Symphysio <confirm@example.org>' \
+uvicorn app.main:app
+```
+
+`outbox` writes each message into the data directory as `outbox/<id>.eml` and
+logs the path, which is what the Playwright flow in `docs/ROADMAP.md` follows to
+click a real link. It never touches the network. `null` accepts the send and
+drops it, which is the right setting for tests.
 
 ## One worker, on purpose
 

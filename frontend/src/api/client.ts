@@ -90,6 +90,9 @@ export const api = {
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   logoutAll: () => request<void>("/auth/logout-all", { method: "POST" }),
   me: () => request<AuthResponse>("/auth/me"),
+  // The token arrives in a body, not a URL, so it never lands in a proxy access log.
+  verifyEmail: (token: string) => request<void>("/auth/verify", { method: "POST", body: { token } }),
+  resendVerification: () => request<void>("/auth/verify/resend", { method: "POST", body: {} }),
 
   catalog: <T>(kind: CatalogKind, params: Record<string, string | boolean | undefined> = {}) =>
     request<T[]>(`/catalog/${kind}${qs(params)}`),

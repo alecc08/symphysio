@@ -16,10 +16,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import Database
+from .mailer import build_mailer
 from .ratelimit import RateLimiter
 from .routers import analytics, auth, catalog, export, logs
 from .security import csrf_matches, new_csrf_token
 from .settings import Settings, get_settings
+from .verification import prune_verifications
 
 logger = logging.getLogger("symphysio")
 
@@ -67,7 +69,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pruned = await db.prune_sessions()
     if pruned:
         logger.info("pruned %d expired session(s)", pruned)
-    logger.info("symphysio ready (db=%s)", settings.database_path)
+    pruned_tokens = await prune_verifications(db)
+    if pruned_tokens:
+        logger.info("pruned %d spent or expired verification token(s)", pruned_tokens)
+    app.state.mailer = build_mailer(settings)
+    if settings.require_email_verification and not settings.email_enabled:
+        # A gate nobody can pass is a bug, not a policy: refuse the combination.
+        raise RuntimeError(
+            "SYPHYSIO_REQUIRE_EMAIL_VERIFICATION is on but email is not configured; "
+            "set RESEND_API_KEY, SYPHYSIO_EMAIL_FROM and SYPHYSIO_PUBLIC_URL, or turn "
+            "the requirement off."
+        )
+    logger.info(
+        "symphysio ready (db=%s, email=%s%s)",
+        settings.database_path,
+        settings.mail_backend,
+        "" if not settings.email_enabled else f", from={settings.email_from}",
+    )
     try:
         yield
     finally:
@@ -175,6 +193,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "or set SYPHYSIO_STATIC_DIR to the compiled bundle.",
                     "openapi": f"{API_PREFIX}/openapi.json",
                 }
+            )
+        return FileResponse(index_html, media_type="text/html")
+
+    # The confirmation link in the email points here; the SPA reads ?token= and
+    # posts it to /api/v1/auth/verify, then rewrites the URL.
+    @app.get("/verify", include_in_schema=False)
+    async def verify_shell() -> Response:
+        index_html = spa_index()
+        if index_html is None:
+            return JSONResponse(
+                {"detail": "Build the frontend to use the confirmation page."},
+                status_code=status.HTTP_404_NOT_FOUND,
             )
         return FileResponse(index_html, media_type="text/html")
 

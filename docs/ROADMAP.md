@@ -1,12 +1,39 @@
 # Roadmap
 
-Not built yet. Each item is written as a design sketch so the shape is decided
-before the code exists — the interesting decisions are the schema and the
-failure modes, not the API call.
+Items marked **built** keep their design sketch: the interesting decisions are
+the schema and the failure modes, not the API call, and the sketch is where they
+are written down. Current behaviour of built items lives in `API.md`,
+`DATABASE.md`, `SECURITY.md` and `DEPLOYING.md`.
 
 ---
 
-## 1. Email confirmation via Resend (next)
+## 1. Email confirmation via Resend — built
+
+**Built as:** `migrations/002_email_verification.sql`, `app/verification.py`,
+`app/mailer.py`, `app/emails.py`, `POST /auth/verify`,
+`POST /auth/verify/resend`, `UserOut.is_verified`, the `/verify` SPA route and
+the in-app reminder banner. 21 tests in `tests/test_email_verification.py`.
+
+**Where it differs from the sketch below:**
+
+- The consumed row is not "token cleared" — it keeps its digest, records
+  `used_at_utc`, and is deleted by `prune_verifications` at startup. One column
+  is simpler than a scrubbing rule.
+- The per-hour budget counts superseded-but-unused rows, because resending
+  **expires** the old row instead of deleting it. Deleting them made resends
+  free, which is the obvious way to turn a confirmation email into a spam
+  cannon.
+- Two dev transports exist that the sketch did not mention:
+  `SYPHYSIO_MAIL_BACKEND=outbox` (in-memory list plus a readable `.eml` file
+  under `<data dir>/outbox`, never sends) and `null` (drops it). Tests use
+  `outbox`.
+- Hard-gate login answers `403` **and queues a new link in the same response**.
+  Raising `HTTPException` there silently dropped the queued send, so the handler
+  returns a `JSONResponse` with the background task attached.
+- The hard gate refuses to start without email configured, rather than starting
+  and locking everyone out.
+
+The sketch, kept as written:
 
 **Why.** Registration currently trusts the address you type. Confirming it buys
 three things at once: the account is reachable (password reset later), the
@@ -146,17 +173,18 @@ same reason.
 
 ---
 
-## 2. Password reset
+## 2. Password reset (next)
 
 Same table, `purpose = 'password_reset'`, 30-minute tokens, and a rule that the
-reset link logs the old sessions out. Needs email first, which is why it sits
-behind item 1.
+reset link logs the old sessions out. The plumbing shipped with item 1, so this
+is now the shortest path: a new purpose, a "forgotten password" route on the
+auth screen, and a session-revoking write.
 
 ## 3. WebAuthn passkeys
 
 Already scoped in REQUIREMENTS.md (Phase 3). Removes the password path for the
 people who never want to type one; email confirmation is what makes passkey
-recovery possible, so it also sits behind item 1.
+recovery possible, and that landed with item 1.
 
 ## 4. Reminders that respect the point of the app
 

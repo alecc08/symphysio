@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { BottomNav, type Tab } from "./components/BottomNav";
+import { EmailBanner } from "./components/EmailBanner";
 import { GearIcon } from "./components/icons/Ui";
 import { BrandMark } from "./components/icons/Tile";
+import { VerifyPage } from "./components/VerifyPage";
 import { AuthPage } from "./pages/AuthPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { InsightsPage } from "./pages/InsightsPage";
@@ -16,6 +18,11 @@ function Shell() {
   const { user, ready } = useSession();
   const [tab, setTab] = useState<Tab>("log");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The emailed confirmation link lands on /verify; the API route of the same
+  // name is POST-only, so this only ever sees the SPA path.
+  const [verifying, setVerifying] = useState(
+    () => window.location.pathname.replace(/\/+$/, "") === "/verify",
+  );
 
   // Every sign-in starts on a clean Log screen: the overlay and tab choices are
   // per-visit state, not per-account state.
@@ -33,6 +40,8 @@ function Shell() {
     );
   }
 
+  if (verifying) return <VerifyPage onDone={() => setVerifying(false)} />;
+
   if (!user) return <AuthPage />;
 
   return (
@@ -40,9 +49,7 @@ function Shell() {
       <div className="app-shell mx-auto min-h-dvh max-w-lg">
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-canvas/90 px-4 py-2 backdrop-blur">
           <span className="flex items-center gap-2 text-sm font-extrabold tracking-tight">
-            <span className="text-physio-ink">
-              <BrandMark className="h-5 w-5" />
-            </span>
+            <BrandMark className="h-5 w-5" />
             Symphysio
           </span>
           <button
@@ -57,6 +64,8 @@ function Shell() {
             <GearIcon className="h-5 w-5" />
           </button>
         </header>
+
+        <EmailBanner />
 
         <main>
           {settingsOpen ? (

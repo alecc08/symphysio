@@ -7,6 +7,8 @@ export interface User {
   id: string;
   email: string;
   created_at_utc: number;
+  /** False only when this install sends confirmation emails and the link is unspent. */
+  is_verified: boolean;
 }
 
 export interface AuthResponse {
