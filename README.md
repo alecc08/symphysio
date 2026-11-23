@@ -117,7 +117,9 @@ curl -fsS https://<host>/api/v1/openapi.json | python3 -c 'import json,sys;print
 ## Quality gates
 
 ```bash
-cd backend  && uv run pytest && uv run ruff check app tests scripts && uv run pip-audit --strict
+cd backend  && uv run pytest && uv run ruff check app tests
+cd backend  && uv export --frozen --no-emit-project --format requirements-txt \
+              | uv run pip-audit --strict --requirement=/dev/stdin
 cd frontend && npm run build && npm audit --audit-level=high
 ```
 

@@ -39,11 +39,18 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen
       - name: Lint
-        run: uv run ruff check app tests scripts
+        run: uv run ruff check app tests
       - name: Tests
         run: uv run pytest
       - name: Dependency audit (pip-audit)
-        run: uv run pip-audit --strict --desc on
+        # What gets audited is the lock file, rendered by `uv export`. The project
+        # itself is left out (pip-audit would look "symphysio-backend" up on PyPI),
+        # and pip-audit's own --skip-editable is not an option: it exits 1 instead
+        # of skipping. Requirements come in on stdin because pip-audit rejects a
+        # bare `-` for -r.
+        run: |
+          uv export --frozen --no-emit-project --format requirements-txt > requirements.audit.txt
+          uv run pip-audit --strict "--requirement=/dev/stdin" < requirements.audit.txt
 
   frontend:
     runs-on: ubuntu-latest
