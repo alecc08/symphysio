@@ -78,13 +78,15 @@ def test_retroactive_timestamps_are_honoured(client: TestClient) -> None:
 def test_future_timestamps_are_clamped_to_now(client: TestClient) -> None:
     register(client)
     symptom = _first(client, "symptoms")
+    started = int(time.time())
     client.post(
         "/api/v1/logs/symptoms",
-        json={"symptom_id": symptom["id"], "severity": 3, "occurred_at_utc": NOW + 7_200},
+        json={"symptom_id": symptom["id"], "severity": 3, "occurred_at_utc": started + 7_200},
         headers=_h(client),
     )
     item = client.get("/api/v1/timeline").json()["items"][0]
-    assert item["occurred_at_utc"] <= NOW + 5
+    # Clamped to the server clock, not to a constant captured at import time.
+    assert started <= item["occurred_at_utc"] <= int(time.time())
 
 
 def test_timeline_filters_and_paging(client: TestClient) -> None:
