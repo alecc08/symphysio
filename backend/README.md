@@ -11,4 +11,3 @@ uv run ruff check app tests              # lint
 
 - Schema and migrations: `migrations/*.sql` (applied automatically on startup).
 - Configuration: environment variables only — see `docs/DEPLOYING.md` in the repo root.
-- Regenerate the weak-password blocklist: `uv run python scripts/build_password_list.py`.

@@ -74,9 +74,11 @@ Email is optional. The server only offers it when `RESEND_API_KEY`,
 configured every account is born `is_verified: true` and nothing changes.
 
 - `POST /auth/register` queues a confirmation link in the response's background
-  task, and `GET`/`POST` never put the token in a URL the access logs would
-  keep: the link is `{SYPHYSIO_PUBLIC_URL}/verify?token=…`, the SPA at `/verify`
-  lifts the token out of the address bar and posts it to `/auth/verify`.
+  task. The link is `{SYPHYSIO_PUBLIC_URL}/verify?token=…`; the SPA at `/verify`
+  lifts the token out of the address bar and posts it as JSON to `/auth/verify`,
+  so the **API** never has a token in a URL. The page navigation itself does
+  carry it, which is why the image starts uvicorn with `--no-access-log` and why
+  your proxy should mask the `token` parameter (DEPLOYING.md).
 - `/auth/verify` returns `204` on success. Anything else is a fresh start for the
   user: `400 {"detail": "That confirmation link is not valid."}`,
   `410 "…has expired. Request a new one."`, `410 "…has already been used."`.
@@ -85,11 +87,19 @@ configured every account is born `is_verified: true` and nothing changes.
   public form). Issuing a new link **expires** the previous one, so two inboxes
   never hold two live links.
 - `GET /auth/me` carries `is_verified`. The UI's reminder banner keys off it.
-- **Soft gate (default).** `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=0`: an unconfirmed
+- **Off.** `SYPHYSIO_EMAIL_CONFIRMATION=off`: no confirmation link is ever mailed,
+  accounts are born confirmed, and `/auth/verify/resend` answers
+  `409 {"detail": "Email confirmation is not enabled on this server."}`. An install
+  with no mail transport behaves the same way without being told to.
+- **Registration is open by default** and can be closed with
+  `SYPHYSIO_ALLOW_REGISTRATION=0`, after which `POST /auth/register` answers
+  `403 {"detail": "Registration is closed on this instance."}`. Close it on
+  anything the internet can reach — [DEPLOYING.md](DEPLOYING.md).
+- **Soft gate (default).** `SYPHYSIO_EMAIL_CONFIRMATION=optional`: an unconfirmed
   account works; the only consequence is the banner. Postnatal care should not
   hinge on an email that may never arrive, so this is the default and the
   recommendation.
-- **Hard gate.** `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=1`: `POST /auth/login` for
+- **Hard gate.** `SYPHYSIO_EMAIL_CONFIRMATION=required`: `POST /auth/login` for
   an unconfirmed account answers `403 {"detail": "Confirm your email first — we
   have just sent you a new link."}` and queues a new link in the same response.
   `POST /auth/register` returns the user without session cookies in that mode.

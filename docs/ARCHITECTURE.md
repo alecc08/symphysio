@@ -44,7 +44,7 @@ a JSON API under `/api/v1` and a compiled React bundle everywhere else.
 | `app/db.py` | aiosqlite connection, `PRAGMA` set, forward-only migrations, query helpers, write lock |
 | `app/security.py` | Argon2id hashing, opaque token → SHA-256 storage, cookie issue/clear, CSRF compare |
 | `app/ratelimit.py` | Sliding-window auth rate limiter (per process) |
-| `app/password_policy.py` | ≥12 chars, breached-password blocklist, no email reuse, no runs |
+| `app/password_policy.py` | ≥12 chars, no famous passwords, no email reuse, no runs |
 | `app/ids.py` | UUIDv7 ids (time-ordered, index-friendly) + clock |
 | `app/seed.py` | default catalogs written at signup, plus the suggestion pool |
 | `app/schemas.py` | Pydantic v2 strict models (`strict=True`, `extra="forbid"`) |

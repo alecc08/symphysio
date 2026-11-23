@@ -1,0 +1,17 @@
+# Third-party notices
+
+The code and documentation in this repository are MIT-licensed (see
+[LICENSE](LICENSE)). One piece of bundled artwork has its own holder:
+
+| Asset | Source | Licence |
+|---|---|---|
+| The Rod of Asclepius inside the brand mark — the three white shapes of the U+2695 glyph (`assets/svg/2695.svg`), used in `frontend/public/icons/*` and `frontend/src/components/icons/brandmark.ts` | [Twemoji](https://github.com/twitter/twemoji), © Twitter, Inc. and other contributors | [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Everything else in the mark (heart, plaster, forearm crutch, palette, composition) and every other icon in the UI | original to this repository | MIT |
+
+The Twemoji-derived shape data is extracted by `scripts/gen_brand_assets.py`, the
+one place the mark's geometry lives; the credit above travels with any
+redistribution of the mark. Full context in [docs/CREDITS.md](docs/CREDITS.md).
+
+No font files, icon fonts, emoji or other third-party binaries are vendored:
+runtime and build dependencies are pinned in `backend/uv.lock` and
+`frontend/package-lock.json`, and none of their artwork ships.

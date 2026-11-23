@@ -50,6 +50,34 @@ location / {
 `X-Forwarded-For` must be set by the proxy: the auth rate limiter keys on it
 (see SECURITY.md).
 
+## If this instance is reachable from the internet
+
+Everything above is enough for a LAN or Tailscale install. Exposing it to the
+whole internet means four more decisions, all cheap:
+
+1. **Close the front door.** Sign up your own accounts, then set
+   `SYPHYSIO_ALLOW_REGISTRATION=0`. Registration is open by default (the first
+   account has to come from somewhere) and a public host gets scanned within
+   hours. `POST /auth/register` then answers `403` — after the IP limiter, so
+   probing it is not free for the prober.
+2. **Mask the confirmation token in your proxy's access log.** The browser opens
+   `https://<host>/verify?token=…`, so the token appears in whoever terminates
+   TLS. Traefik:
+
+   ```yaml
+   --accessLog.maskedParameters=token
+   ```
+
+   nginx logs the request line as-is, so use `location = /verify { access_log off; }`
+   or post-process. The container itself runs uvicorn with `--no-access-log` for
+   exactly this reason, which is why the proxy is the only place left to fix.
+3. **HSTS at the proxy** (`max-age=31536000; includeSubDomains`). The app sends
+   CSP with `upgrade-insecure-requests` but not HSTS, because getting this value
+   wrong is a lockout and it belongs with the certificate.
+4. **Pin the image tag** — `ghcr.io/alecc08/symphysio:0.1.0`, not `:latest`.
+   Migrations are forward-only, so `:latest` moving under you means a rollback
+   needs a restore, not a pull (see [RELEASES.md](RELEASES.md)).
+
 ## Container hardening
 
 The image is multi-stage (`node:24-alpine` builds the SPA, `python:3.12-slim`
@@ -91,6 +119,7 @@ is baked into the image. See `.env.example`.
 | `SYPHYSIO_COOKIE_SECURE` | `1` | `Secure` on both cookies; set `0` only for plain-HTTP dev on a non-localhost origin |
 | `SYPHYSIO_SESSION_TTL_DAYS` | `30` | session lifetime (rolled forward at half-life) |
 | `SYPHYSIO_MAX_BODY_BYTES` | `262144` | request body cap, enforced before parsing |
+| `SYPHYSIO_ALLOW_REGISTRATION` | `1` | `0` closes sign-up — `POST /auth/register` answers `403`. Set it to `0` on anything the internet can see, once your own accounts exist |
 | `SYPHYSIO_RATE_LIMIT` | `1` | `0` disables auth rate limiting (dev only) |
 | `SYPHYSIO_RATE_LIMIT_ATTEMPTS` | `10` | attempts per window, per IP and per email |
 | `SYPHYSIO_RATE_LIMIT_WINDOW` | `900` | sliding window, seconds |
@@ -102,7 +131,7 @@ is baked into the image. See `.env.example`.
 | `SYPHYSIO_MAIL_BACKEND` | `resend` if configured, else `null` | `resend`, `outbox` (write `.eml` files to the data dir, never send) or `null` |
 | `SYPHYSIO_EMAIL_TTL_SECONDS` | `86400` | how long a confirmation link works (floor 300) |
 | `SYPHYSIO_EMAIL_SENDS_PER_HOUR` | `3` | per-account send budget, counted in the database |
-| `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION` | `0` | `1` blocks sign-in until the link is clicked; the server refuses to start with `1` and no email configured |
+| `SYPHYSIO_EMAIL_CONFIRMATION` | `optional` | `off` = no confirmation mail at all; `optional` = link + banner, never blocks; `required` = sign-in blocked until clicked (refuses to start with no mail transport) |
 
 ## Outbound email (optional)
 
@@ -128,9 +157,11 @@ To turn it on with Resend:
    `SYPHYSIO_PUBLIC_URL` to the origin your phone actually reaches. The link host
    comes from this variable, never from the request's `Host` header, so a reverse
    proxy in front does not change what lands in the mail.
-5. Leave `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=0` unless you specifically want the
-   hard gate. The soft default is deliberate: a postnatal user whose
-   confirmation mail went to spam should not be locked out of their diary.
+5. Choose `SYPHYSIO_EMAIL_CONFIRMATION`. `optional` (the default) sends the link
+   and shows a reminder but never locks anyone out — a postnatal user whose mail
+   went to spam should not be shut out of their own diary. `off` skips the whole
+   business if you would rather not run outbound mail for this app at all, and
+   `required` is there if you want the hard gate.
 
 Developing without sending anything:
 

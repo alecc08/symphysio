@@ -44,7 +44,7 @@ def test_password_policy(client: TestClient) -> None:
         "/api/v1/auth/register", json={"email": EMAIL, "password": "password1234"}
     )
     assert breached.status_code == 422
-    assert "breached" in breached.json()["detail"]
+    assert "common password" in breached.json()["detail"]
     with_email = client.post(
         "/api/v1/auth/register", json={"email": EMAIL, "password": "example-com-9999"}
     )

@@ -1,0 +1,19 @@
+# gitleaks: the stock rules plus one narrow exception.
+#
+# Nothing here weakens the scan. The demo passphrase below is invented; it turns
+# up in the seed script, the test fixtures, the README and the screenshots, and it
+# is the only value allowed through - every other secret-shaped string still fails
+# the build. Checked that way on purpose: a real-shaped AWS key next to the demo
+# passphrase in one file still reports exactly one leak.
+#
+# The section is singular `[allowlist]`, which is gitleaks' *global* form. The
+# plural `[[allowlists]]` is a per-rule thing: at top level it parses happily,
+# matches nothing, and leaves you with an allowlist that only looks like it works.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "the invented demo passphrase: it guards a throwaway account full of made-up logs"
+regexTarget = "line"
+regexes = '''sunlit-origami-42'''

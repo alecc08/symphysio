@@ -49,7 +49,8 @@ class Settings:
     public_url: str | None
     email_verification_ttl_seconds: int
     email_sends_per_hour: int
-    require_email_verification: bool
+    email_confirmation: str  # "off" | "optional" | "required"
+    allow_registration: bool = True  # keyword default: see get_settings
 
     @property
     def session_cookie(self) -> str:
@@ -64,6 +65,21 @@ class Settings:
         """Email is only usable with a key, a sender and an absolute link host."""
         return bool(self.resend_api_key and self.email_from and self.public_url)
 
+    @property
+    def confirmation_enabled(self) -> bool:
+        """Whether the confirm-your-email flow runs at all.
+
+        Two ways to be off, and they mean the same thing to the user: the admin
+        turned it off, or there is no mail transport to send a link with. Both
+        leave accounts born confirmed and no banner in the UI.
+        """
+        return self.email_confirmation != "off" and self.email_enabled
+
+    @property
+    def require_email_verification(self) -> bool:
+        """Hard gate: an unconfirmed account may not use its session."""
+        return self.email_confirmation == "required"
+
 
 def _env_url(name: str) -> str | None:
     raw = os.environ.get(name, "").strip().rstrip("/")
@@ -72,6 +88,25 @@ def _env_url(name: str) -> str | None:
     if not raw.startswith(("http://", "https://")):
         raise ValueError(f"{name} must be an absolute http(s) URL, got {raw!r}")
     return raw
+
+
+_EMAIL_MODES = ("off", "optional", "required")
+
+
+def _email_confirmation_mode() -> str:
+    """How hard the admin wants people to confirm their address.
+
+    - ``off``      — the app never sends a confirmation link and never nags.
+    - ``optional`` — a link is sent and a banner reminds; an unconfirmed account
+      still works. This is the default.
+    - ``required`` — an unconfirmed account cannot use its session. Needs a mail
+      transport: ``main.lifespan`` refuses to start without one.
+    """
+    mode = os.environ.get("SYPHYSIO_EMAIL_CONFIRMATION", "").strip().lower() or "optional"
+    if mode not in _EMAIL_MODES:
+        expected = "|".join(_EMAIL_MODES)
+        raise ValueError(f"unknown SYPHYSIO_EMAIL_CONFIRMATION={mode!r}, expected {expected}")
+    return mode
 
 
 def get_settings() -> Settings:
@@ -112,5 +147,9 @@ def get_settings() -> Settings:
         public_url=public_url,
         email_verification_ttl_seconds=max(300, _env_int("SYPHYSIO_EMAIL_TTL_SECONDS", 86_400)),
         email_sends_per_hour=max(1, _env_int("SYPHYSIO_EMAIL_SENDS_PER_HOUR", 3)),
-        require_email_verification=_env_bool("SYPHYSIO_REQUIRE_EMAIL_VERIFICATION", False),
+        email_confirmation=_email_confirmation_mode(),
+        # Open by default: the first account has to come from somewhere. A
+        # instance that is reachable from the internet should close this once
+        # its own accounts exist - see docs/DEPLOYING.md.
+        allow_registration=_env_bool("SYPHYSIO_ALLOW_REGISTRATION", True),
     )

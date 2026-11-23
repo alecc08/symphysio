@@ -5,6 +5,7 @@
 **Symphysio** is a frictionless, mobile-first web application for tracking physiotherapy exercises and physical symptoms. The core principle is **"click and log"**: logging an exercise or symptom should take under 5 seconds with 1 to 2 taps. Behind the minimal interface sits a strictly normalized, time-indexed SQLite database built for downstream time-series visualization and lag-correlation analysis (for example, identifying whether a specific symptom consistently flares 2 to 6 hours after a particular exercise).
 
 * **Target Repository:** `[https://github.com/alserv-org/symphysio](https://github.com/alserv-org/symphysio)` (public)
+  *Moved to `https://github.com/alecc08/symphysio` on 2026-11-23 — `alserv-org` is kept for things intended to be sold or marketed, `alecc08` is the personal sandbox. The old URL redirects.*
 * **Deployment Model:** Single-container or single-VPS deployment serving both the API and the compiled React PWA.
 
 ---

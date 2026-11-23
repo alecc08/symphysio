@@ -15,8 +15,11 @@ frontend/.vite/
 *.tsbuildinfo
 *.local
 
-# App data (SQLite lives here in dev and in the container bind mount)
-data/
+# App data (the SQLite file lives here in dev and in the container bind mount).
+# Anchored on purpose: an unanchored `data/` matches any directory named data,
+# including ones inside the source tree that should be committed.
+/data/
+backend/data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

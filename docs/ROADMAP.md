@@ -93,7 +93,7 @@ mean a misconfigured SMTP lock a person out of their own recovery diary, which i
 the opposite of what this app is for.
 
 ```
-SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=0   # 1 = block login until confirmed
+SYPHYSIO_EMAIL_CONFIRMATION=optional   # off | optional | required
 ```
 
 Deployments with no email configured at all (`RESEND_API_KEY` unset) stay in
@@ -137,7 +137,7 @@ RESEND_API_KEY=re_xxx                 # unset ⇒ email disabled, app still work
 SYPHYSIO_EMAIL_FROM=Symphysio <confirm@yourdomain>   # domain must be verified in Resend
 SYPHYSIO_EMAIL_REPLY_TO=              # optional
 SYPHYSIO_PUBLIC_URL=https://symphysio.example.com    # absolute link in the email
-SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=0
+SYPHYSIO_EMAIL_CONFIRMATION=optional
 ```
 
 `SYPHYSIO_PUBLIC_URL` is required when email is on: a relative link is useless,
@@ -153,7 +153,9 @@ recorded in DEPLOYING.md when this lands.
   logged masked (`p…e@example.com`) at `INFO`, full address only at `DEBUG`.
 - The token appears in a URL the user clicks, which means it can appear in a
   proxy access log. Mitigations: single use, 24 h TTL, `Referrer-Policy:
-  no-referrer` (already set), and the SPA removing it from history immediately.
+  no-referrer` (already set), the SPA removing it from history immediately, and
+  the image starting uvicorn with `--no-access-log` so the request line is not
+  recorded by the app itself either.
 
 ### Tests
 

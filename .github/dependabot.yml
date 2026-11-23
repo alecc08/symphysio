@@ -1,0 +1,50 @@
+# Dependabot raises PRs for the three lock files and for the actions this repo
+# runs. It opens PRs, never merges them: CI (including `uv lock --check` and
+# `npm ci --dry-run`) is what decides whether a bump is safe.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      time: "06:17"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: "/backend"
+    schedule:
+      interval: weekly
+      time: "06:17"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+      time: "06:17"
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    groups:
+      # React/Vite/TypeScript move together; one PR keeps `npm run build` the
+      # single thing that has to pass.
+      frontend-toolchain:
+        patterns:
+          - "typescript"
+          - "vite"
+          - "@vitejs/*"
+          - "tailwindcss"
+          - "@tailwindcss/*"
+          - "@types/*"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

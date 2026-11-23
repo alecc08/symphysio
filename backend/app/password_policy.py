@@ -1,48 +1,40 @@
-"""Password strength policy: >= 12 characters, not on a common-password list.
+"""Password policy: at least 12 characters, and not one of the famous ones.
 
-No arbitrary symbol rules — length and unpredictability are what actually holds
-up, and forced symbol soup just pushes people to write passwords down.
+Length is what actually holds up against offline cracking, so there are no
+symbol or capitalisation mandates — rule soup just pushes people to write their
+passwords down. A weak password chosen by the user is their own risk; the small
+inline list below is not a security boundary, it only catches the handful of
+passwords that appear in every breach corpus and would otherwise sail past a
+length check. It is deliberately twelve entries and no data file.
 """
 
 from __future__ import annotations
 
 import re
-from functools import lru_cache
-from pathlib import Path
 
 MIN_LENGTH = 12
 MAX_LENGTH = 128
-DATA_FILE = Path(__file__).resolve().parent / "data" / "common_passwords.txt"
 
-_FALLBACK = frozenset(
+# Long enough to clear MIN_LENGTH, famous enough to be guessed instantly.
+_COMMON = frozenset(
     {
-        "password",
-        "passw0rd",
-        "password1",
-        "password12",
-        "password123",
-        "123456",
-        "123456789",
-        "1234567890",
-        "qwertyuiop",
-        "letmein123",
-        "iloveyou12",
-        "adminadmin",
-        "welcome123",
-        "abc123abc123",
+        "password1234",
+        "password12345",
+        "password123456",
+        "passw0rd1234",
+        "abc123456789",
+        "qwertyuiop123",
+        "123456789012",
+        "iloveyou12345",
+        "letmein123456",
+        "welcome123456",
+        "admin12345678",
+        "changeme123456",
     }
 )
 
 _REPEAT_RUN = re.compile(r"(.)\1{5,}")
 _KEYBOARD_RUN = re.compile(r"(?i)(qwert|asdfg|zxcvb|123456|654321)")
-
-
-@lru_cache(maxsize=1)
-def blocklist() -> frozenset[str]:
-    if not DATA_FILE.is_file():
-        return _FALLBACK
-    lines = DATA_FILE.read_text(encoding="utf-8").splitlines()
-    return frozenset(line.strip().lower() for line in lines if line.strip())
 
 
 def check_password(email: str, password: str) -> list[str]:
@@ -55,8 +47,8 @@ def check_password(email: str, password: str) -> list[str]:
         problems.append(f"Password must be at most {MAX_LENGTH} characters.")
     if password != password.strip():
         problems.append("Password must not start or end with whitespace.")
-    if lowered in blocklist():
-        problems.append("That password is on a known-breached list. Pick another.")
+    if lowered in _COMMON:
+        problems.append("That is one of the most common passwords. Pick another.")
     if email:
         local = email.split("@", 1)[0].lower()
         if local and (local in lowered or lowered in local):
