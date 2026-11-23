@@ -84,7 +84,9 @@ in flight, only its SHA-256 digest at rest.
 - Sends are background tasks after the response, so a slow or dead mail provider
   cannot hang or fail a sign-up. A failed send leaves the account usable in soft
   mode and the banner offers a resend.
-- **Refused configuration:** `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=1` without
+- **Admin can opt out entirely:** `SYPHYSIO_EMAIL_CONFIRMATION=off` mails nothing,
+  shows no banner and gates nothing, even when a transport is configured.
+- **Refused configuration:** `SYPHYSIO_EMAIL_CONFIRMATION=required` without
   email configured aborts startup rather than creating accounts nobody can
   unlock.
 
@@ -95,12 +97,14 @@ in flight, only its SHA-256 digest at rest.
   upgrade cannot silently weaken them).
 - `password_needs_rehash` is checked on login; a stronger parameter set later
   means the hash is rewritten on the next successful login.
-- Policy (`app/password_policy.py`): ≥ 12 characters, ≤ 128, not equal to the
-  email local part, not on a committed breached-password list
-  (`app/data/common_passwords.txt`, 20 001 entries, rebuilt with
-  `backend/scripts/build_password_list.py`), no 6+ character repeat runs, no
-  keyboard runs. No symbol/uppercase mandates: length is what holds up, and
-  rule soup pushes people to write passwords down.
+- Policy (`app/password_policy.py`): ≥ 12 characters, ≤ 128, not the email
+  address or its domain, no 6+ character repeat runs, no keyboard runs, and a
+  dozen famous 12+-character passwords refused by name. No symbol/uppercase
+  mandates and no breached-password corpus: length is what holds up, rule soup
+  pushes people to write passwords down, and a weak password someone chose on
+  purpose is their own decision — the list of common passwords was a 164 KB
+  data file with a generator script, and it once shipped missing from every
+  clone and image because a `.gitignore` pattern ate it.
 - Input is truncated at 1024 bytes before hashing (argon2-cffi rejects
   oversized inputs; a 1 MiB password would be a cheap DoS).
 - Timing: login runs Argon2 verification against a **dummy hash** when the email
