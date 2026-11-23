@@ -4,19 +4,23 @@ name: build
 # needs no credentials:  docker pull ghcr.io/alecc08/symphysio:<version>
 #
 #   push to main -> :<full sha> and :latest
-#   a v* tag     -> :<version>  (v1.2.3 -> 1.2.3)
+#   a v* tag     -> :<version>  (v1.2.3 -> 1.2.3). release.yml creates the tag and
+#                   then starts this workflow for it, because a tag made with
+#                   GITHUB_TOKEN does not fire on.push.tags.
 #
 # `github.repository` is the image path because GHCR namespaces are lowercase,
 # which `alecc08/symphysio` already is. If this repo ever moves to an owner with
 # capitals in the login, write the lowercase form here instead of using context.
 
 on:
-  # No workflow_dispatch: a manually dispatched build shares buildkit's cache
-  # with the images everyone pulls, which is a poisoning path (zizmor calls it
-  # cache-poisoning). Re-run the push build instead.
   push:
     branches: [main]
     tags: ["v*"]
+  # release.yml starts this for the tag it just created: a tag made with
+  # GITHUB_TOKEN does not fire `on.push.tags`, so the release would otherwise
+  # have no image. Only someone with write access to this repo can dispatch it,
+  # and a pull request never runs this workflow at all.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -38,9 +42,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # The cache-poisoning rule assumes this workflow can be triggered by
-      # untrusted input; it cannot — only a push to main or a v* tag runs it,
-      # and both are already reviewed. The cache is additionally scoped per ref.
+      # cache-poisoning is about a build whose input an untrusted contributor can
+      # influence. Nobody can reach this workflow that way: pull requests run
+      # ci.yml, and the only ways to start this one are a push to main, a v* tag,
+      # or a dispatch from someone with write access. The cache is also scoped per
+      # ref, so a run cannot read another ref's layer cache.
       - uses: docker/setup-buildx-action@v3  # zizmor: ignore[cache-poisoning]
 
       - uses: docker/login-action@v3
@@ -72,6 +78,11 @@ jobs:
             type=sha,prefix=,format=long,event=branch
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
+            # Same thing spelled out, because a workflow_dispatch run started for
+            # a tag is not a "tag push" event and metadata-action's semver type is
+            # event-sensitive. This line is what puts 0.1.0 on the image when
+            # release.yml starts this workflow for the tag it created.
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - uses: docker/build-push-action@v6
         with:
