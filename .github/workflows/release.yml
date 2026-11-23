@@ -1,0 +1,105 @@
+name: release
+
+# Merging to main is the release event. `VERSION` is the version of record: when
+# a commit on main carries a VERSION that has no `v<VERSION>` tag yet, this tags
+# that commit, publishes a GitHub Release whose notes are that version's
+# CHANGELOG section, and starts build.yml for the tag.
+#
+# So: bump VERSION in the PR that lands the feature (docs and tests need not
+# bump it — an untagged commit never holds the next release hostage, everything
+# since the last tag ships with it).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    # Two pushes in a row must not race to create the same tag.
+    concurrency: release-${{ github.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Read VERSION and look for its tag
+        id: meta
+        run: |
+          version=$(tr -d '[:space:]' < VERSION)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v${version} is already tagged: nothing to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: VERSION is plain semver
+        # A tag is forever, and build.yml's semver tag rule will not match
+        # "v1.2-snapshot", so refuse here rather than publish something odd.
+        if: steps.meta.outputs.exists == 'false'
+        env:
+          VER: ${{ steps.meta.outputs.version }}
+        run: |
+          if ! printf '%s' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::VERSION must be plain semver (1.2.3 or 1.2.3-rc1), got '$VER'."
+            exit 1
+          fi
+
+      - name: Extract this version's changelog notes
+        if: steps.meta.outputs.exists == 'false'
+        env:
+          VER: ${{ steps.meta.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+
+          ver = os.environ["VER"]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(
+              rf"^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+              text,
+              re.MULTILINE | re.DOTALL,
+          )
+          notes = match.group(1).strip() if match else ""
+          pathlib.Path("/tmp/release-notes.md").write_text(notes, encoding="utf-8")
+          if not notes:
+              print(f"warning: CHANGELOG.md has no section for [{ver}]; "
+                    "falling back to generated notes")
+          PY
+
+      - name: Tag it and publish the release
+        if: steps.meta.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          # Tag the commit this run is building, which is HEAD (and the release
+          # commit, if the step above wrote one), never whatever the default
+          # branch happens to point at.
+          sha="$(git rev-parse HEAD)"
+          echo "tagging ${sha}"
+          if [ -s /tmp/release-notes.md ]; then
+            gh release create "$TAG" --target "$sha" --title "$TAG" --notes-file /tmp/release-notes.md
+          else
+            gh release create "$TAG" --target "$sha" --title "$TAG" --generate-notes
+          fi
+
+      - name: Build the image for this tag
+        if: steps.meta.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          # Explicit, because the tag was created with GITHUB_TOKEN and events
+          # triggered by that token do not start new runs — build.yml's `v*`
+          # trigger would never fire on its own.
+          gh workflow run build.yml --ref "$TAG"

@@ -1,5 +1,14 @@
 # Symphysio
 
+[![CI](https://github.com/alecc08/symphysio/actions/workflows/ci.yml/badge.svg)](https://github.com/alecc08/symphysio/actions/workflows/ci.yml)
+[![Image](https://github.com/alecc08/symphysio/actions/workflows/build.yml/badge.svg)](https://github.com/alecc08/symphysio/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/alecc08/symphysio?sort=semver)](https://github.com/alecc08/symphysio/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React%2019-TypeScript-61DAFB?logo=react&logoColor=black)
+[![GHCR](https://img.shields.io/badge/ghcr.io-alecc08%2Fsymphysio-2496ED?logo=docker&logoColor=white)](https://github.com/alecc08/symphysio/pkgs/container/symphysio)
+
 **Click and log.** A mobile-first PWA for tracking physiotherapy exercises and
 physical symptoms in one or two taps — with an analytics-ready SQLite database
 behind it, so you can finally answer *"does this exercise actually make the next
@@ -75,11 +84,35 @@ buttons**.
 docker compose up -d --build          # serves on 127.0.0.1:8090
 ```
 
+Or pull a published image instead of building — the package is public, so a
+deploy host needs no credentials:
+
+```bash
+docker pull ghcr.io/alecc08/symphysio:latest   # or the exact version you want
+```
+
 Put a TLS reverse proxy in front of it (Caddy/Traefik/nginx) — `Secure` cookies
 and the CSP assume HTTPS. The container runs as uid `10001` on a read-only root
 filesystem; the only writable paths are `/data` (the SQLite file) and `/tmp`.
 See [docs/DEPLOYING.md](docs/DEPLOYING.md) for the proxy snippet, environment
 reference and backup cron.
+
+## Versioning and releases
+
+The version of record is [`VERSION`](VERSION) — one line, plain semver. Merging a
+PR to `main` whose `VERSION` has no `v<VERSION>` tag yet publishes a GitHub
+Release (notes come from that version's section of
+[CHANGELOG.md](CHANGELOG.md)) and builds `ghcr.io/alecc08/symphysio:<version>`.
+So the release *is* the merge: there is nothing to run by hand.
+
+A feature PR bumps `VERSION` and adds its `CHANGELOG.md` section in the same
+branch. Docs-only and test-only PRs do not bump. What the numbers mean, and what
+to do about a tag that is already public, is in
+[docs/RELEASES.md](docs/RELEASES.md).
+
+```bash
+curl -fsS https://<host>/api/v1/openapi.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["version"])'
+```
 
 ## Quality gates
 
@@ -88,8 +121,16 @@ cd backend  && uv run pytest && uv run ruff check app tests scripts && uv run pi
 cd frontend && npm run build && npm audit --audit-level=high
 ```
 
-GitHub Actions runs all of the above on every push, plus a weekly dependency
-audit and a container smoke test.
+GitHub Actions runs all of the above on every push and pull request, plus:
+
+- `uv lock --check` and `npm ci --dry-run`, so a lock file can never drift from
+  its manifest (Dependabot PRs are checked by exactly these two);
+- a container build and a hardened smoke test, which also asserts that the
+  running app reports the version in `VERSION`;
+- a secret scan of history (gitleaks) and a static audit of the workflows
+  themselves (zizmor);
+- a weekly re-run of both dependency audits, because CVEs appear after the code
+  was written.
 
 ## What it does
 
@@ -114,19 +155,24 @@ audit and a container smoke test.
 | [docs/BACKUPS.md](docs/BACKUPS.md) | Backup and restore, data portability |
 | [docs/UI_DESIGN_SYSTEM.md](docs/UI_DESIGN_SYSTEM.md) | Palette, tiles, icon rules, the brand mark, motion rules |
 | [docs/CREDITS.md](docs/CREDITS.md) | Attribution for the Rod of Asclepius geometry in the logo |
+| [docs/RELEASES.md](docs/RELEASES.md) | Versioning, how a merge becomes a release, image tags |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What is next, designed before it is built |
+| [CHANGELOG.md](CHANGELOG.md) | What shipped in each version |
 
 ## Status
 
 Phase 1 and 2 are implemented and covered by tests; Phase 3 ships the insights
 charts and lag correlations (charts are hand-built, no chart dependency). Email
-confirmation is built: a hashed single-use token, a 24 h link, and a soft
-"confirm your email" gate that never locks you out of your own diary if mail is
-down or unconfigured.
+confirmation is built — a hashed single-use token and a 24 h link — and it is the
+operator's choice how much it matters: `SYPHYSIO_EMAIL_CONFIRMATION` is `off`,
+`optional` (default: link plus a reminder banner, never a lockout) or `required`.
+With no mail transport configured the app behaves as if it were off.
 
 Next, in [docs/ROADMAP.md](docs/ROADMAP.md): **password reset**, on the same
 token plumbing. WebAuthn passkeys follow.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). One piece of artwork has its own holder (the
+Twemoji Rod of Asclepius geometry in the logo, CC-BY 4.0): [NOTICE](NOTICE) and
+[docs/CREDITS.md](docs/CREDITS.md).

@@ -1,0 +1,111 @@
+name: build
+
+# Publishes the image deployment hosts pull. The package is public, so a host
+# needs no credentials:  docker pull ghcr.io/alecc08/symphysio:<version>
+#
+#   push to main -> :<full sha> and :latest
+#   a v* tag     -> :<version>  (v1.2.3 -> 1.2.3)
+#
+# `github.repository` is the image path because GHCR namespaces are lowercase,
+# which `alecc08/symphysio` already is. If this repo ever moves to an owner with
+# capitals in the login, write the lowercase form here instead of using context.
+
+on:
+  # No workflow_dispatch: a manually dispatched build shares buildkit's cache
+  # with the images everyone pulls, which is a poisoning path (zizmor calls it
+  # cache-poisoning). Re-run the push build instead.
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}
+
+jobs:
+  image:
+    # Two pushes to main racing to repoint :latest is how an image ends up
+    # labelled one version and serving another.
+    concurrency: build-${{ github.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # The cache-poisoning rule assumes this workflow can be triggered by
+      # untrusted input; it cannot — only a push to main or a v* tag runs it,
+      # and both are already reviewed. The cache is additionally scoped per ref.
+      - uses: docker/setup-buildx-action@v3  # zizmor: ignore[cache-poisoning]
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read VERSION
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: VERSION is plain semver
+        # build.yml's semver tag rule will not match "v1.2-snapshot", so refuse
+        # to publish something odd rather than half-tagging it.
+        env:
+          VER: ${{ steps.version.outputs.version }}
+        run: |
+          if ! printf '%s' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::VERSION must be plain semver (1.2.3 or 1.2.3-rc1), got '$VER'"
+            exit 1
+          fi
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=,format=long,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+          # Cache scoped to the ref: this workflow publishes images, and a cache
+          # shared across refs is a poisoning path (zizmor's cache-poisoning).
+          cache-from: type=gha,scope=${{ github.ref_name }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
+
+      - name: The pushed image reports the version it was tagged with
+        # A tag is a claim about bytes; check the claim. Values arrive through
+        # env, never interpolated into the script.
+        env:
+          WANT: ${{ steps.version.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          tag=$(printf '%s\n' "$TAGS" | grep -v ':latest$' | head -1)
+          echo "verifying $tag claims $WANT"
+          docker run -d --name verify -p 8090:8000 \
+            --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
+            --user 10001 --cap-drop ALL --security-opt no-new-privileges \
+            "$tag"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/healthz >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          test "${ok:-}" = "1"
+          api=$(curl -fsS http://127.0.0.1:8090/api/v1/openapi.json \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')
+          docker logs verify
+          test "$api" = "$WANT"

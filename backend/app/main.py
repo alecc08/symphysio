@@ -27,6 +27,26 @@ logger = logging.getLogger("symphysio")
 
 API_PREFIX = "/api/v1"
 
+# The version has exactly one home: the repo-root VERSION file. The image copies
+# that file next to the app, so the running app, the git tag and the image label
+# cannot disagree, and a test enforces it from the source checkout.
+_VERSION_CANDIDATES = (
+    Path(__file__).resolve().parent.parent / "VERSION",  # /app/VERSION in the image
+    Path(__file__).resolve().parent.parent.parent / "VERSION",  # repo root, running from backend/
+)
+
+
+def read_version() -> str:
+    for path in _VERSION_CANDIDATES:
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+    return "0.0.0+local"
+
+
+__version__ = read_version()
+
 # No inline scripts, no third-party origins, no framing, no plugin content.
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:;"
@@ -76,14 +96,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.require_email_verification and not settings.email_enabled:
         # A gate nobody can pass is a bug, not a policy: refuse the combination.
         raise RuntimeError(
-            "SYPHYSIO_REQUIRE_EMAIL_VERIFICATION is on but email is not configured; "
-            "set RESEND_API_KEY, SYPHYSIO_EMAIL_FROM and SYPHYSIO_PUBLIC_URL, or turn "
-            "the requirement off."
+            "SYPHYSIO_EMAIL_CONFIRMATION=required but no mail transport is configured; "
+            "set RESEND_API_KEY, SYPHYSIO_EMAIL_FROM and SYPHYSIO_PUBLIC_URL, or use "
+            "SYPHYSIO_EMAIL_CONFIRMATION=optional (or off)."
         )
     logger.info(
-        "symphysio ready (db=%s, email=%s%s)",
+        "symphysio ready (db=%s, email=%s, confirmation=%s%s)",
         settings.database_path,
         settings.mail_backend,
+        settings.email_confirmation,
         "" if not settings.email_enabled else f", from={settings.email_from}",
     )
     try:
@@ -114,7 +135,7 @@ def _should_issue_csrf(request: Request, settings: Settings) -> bool:
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="Symphysio API",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -189,6 +210,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse(
                 {
                     "app": "symphysio",
+                    "version": __version__,
                     "message": "API is running. Build the frontend (npm run build) "
                     "or set SYPHYSIO_STATIC_DIR to the compiled bundle.",
                     "openapi": f"{API_PREFIX}/openapi.json",

@@ -11,14 +11,25 @@ on:
 permissions:
   contents: read
 
+# A new push makes the previous run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13"
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
@@ -36,11 +47,14 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -51,18 +65,73 @@ jobs:
       - name: Typecheck and build
         run: npm run build
       - name: Dependency audit (npm audit)
-        run: npm audit --audit-level=high
+        # The threshold lives in package.json, not here.
+        run: npm run audit:ci
+
+  supply-chain:
+    # Things that are cheap to check and impossible to check by eye: the lock
+    # file agreeing with the manifest, secrets in history, and the workflows
+    # themselves (a `${{ github.event.pull_request.title }}` interpolated into a
+    # run: block is an injection hole in the CI, not in the app).
+    name: Supply chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: uv.lock matches pyproject.toml
+        working-directory: backend
+        run: |
+          uv lock --check || {
+            echo "::error::backend/uv.lock is out of date with backend/pyproject.toml."
+            echo "Run 'uv lock' in backend/ and commit the result."
+            exit 1
+          }
+      - name: package-lock.json matches package.json
+        working-directory: frontend
+        run: npm ci --dry-run
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Workflow audit (zizmor)
+        # From PyPI rather than a third-party action: one less thing in the
+        # trusted path, and the version is explicit. Offline because we only
+        # audit our own files.
+        run: uvx zizmor@1 --offline .github/workflows
 
   image:
     runs-on: ubuntu-latest
     needs: [backend, frontend]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Build container image
-        run: docker build -t symphysio:ci .
+        run: docker build -t symphysio:ci --build-arg VERSION="$(tr -d '[:space:]' < VERSION)" .
       - name: Smoke test the image
+        # A named volume, not a bind mount: the image runs as uid 10001 and a
+        # directory owned by the runner's uid 1000 is not writable by it, which
+        # looks like a broken app rather than a permissions problem. The flags
+        # mirror docker-compose.yml so the hardening is tested, not assumed.
         run: |
-          docker run -d --name symphysio-smoke -p 8090:8000 -v "$PWD/ci-data:/data" symphysio:ci
+          docker volume create symphysio-ci-data
+          docker run -d --name symphysio-smoke -p 8090:8000 \
+            --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
+            --user 10001 --cap-drop ALL --security-opt no-new-privileges \
+            -v symphysio-ci-data:/data symphysio:ci
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8090/healthz >/dev/null; then ok=1; break; fi
             sleep 2
@@ -70,3 +139,19 @@ jobs:
           docker logs symphysio-smoke
           test "${ok:-}" = "1"
           curl -fsS http://127.0.0.1:8090/ | grep -q 'id="root"'
+      - name: The image says what it is, and sends the headers
+        run: |
+          want=$(tr -d '[:space:]' < VERSION)
+          got=$(curl -fsS http://127.0.0.1:8090/api/v1/openapi.json \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')
+          echo "VERSION=$want openapi=$got"
+          test "$got" = "$want"
+          headers=$(curl -fsSI http://127.0.0.1:8090/)
+          for h in 'content-security-policy' 'x-frame-options: DENY' 'x-content-type-options: nosniff'; do
+            echo "$headers" | grep -qi "$h" || { echo "missing header: $h"; exit 1; }
+          done
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f symphysio-smoke >/dev/null 2>&1 || true
+          docker volume rm symphysio-ci-data >/dev/null 2>&1 || true
