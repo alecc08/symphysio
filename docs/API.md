@@ -85,11 +85,15 @@ configured every account is born `is_verified: true` and nothing changes.
   public form). Issuing a new link **expires** the previous one, so two inboxes
   never hold two live links.
 - `GET /auth/me` carries `is_verified`. The UI's reminder banner keys off it.
-- **Soft gate (default).** `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=0`: an unconfirmed
+- **Off.** `SYPHYSIO_EMAIL_CONFIRMATION=off`: no confirmation link is ever mailed,
+  accounts are born confirmed, and `/auth/verify/resend` answers
+  `409 {"detail": "Email confirmation is not enabled on this server."}`. An install
+  with no mail transport behaves the same way without being told to.
+- **Soft gate (default).** `SYPHYSIO_EMAIL_CONFIRMATION=optional`: an unconfirmed
   account works; the only consequence is the banner. Postnatal care should not
   hinge on an email that may never arrive, so this is the default and the
   recommendation.
-- **Hard gate.** `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=1`: `POST /auth/login` for
+- **Hard gate.** `SYPHYSIO_EMAIL_CONFIRMATION=required`: `POST /auth/login` for
   an unconfirmed account answers `403 {"detail": "Confirm your email first — we
   have just sent you a new link."}` and queues a new link in the same response.
   `POST /auth/register` returns the user without session cookies in that mode.

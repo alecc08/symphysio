@@ -102,7 +102,7 @@ is baked into the image. See `.env.example`.
 | `SYPHYSIO_MAIL_BACKEND` | `resend` if configured, else `null` | `resend`, `outbox` (write `.eml` files to the data dir, never send) or `null` |
 | `SYPHYSIO_EMAIL_TTL_SECONDS` | `86400` | how long a confirmation link works (floor 300) |
 | `SYPHYSIO_EMAIL_SENDS_PER_HOUR` | `3` | per-account send budget, counted in the database |
-| `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION` | `0` | `1` blocks sign-in until the link is clicked; the server refuses to start with `1` and no email configured |
+| `SYPHYSIO_EMAIL_CONFIRMATION` | `optional` | `off` = no confirmation mail at all; `optional` = link + banner, never blocks; `required` = sign-in blocked until clicked (refuses to start with no mail transport) |
 
 ## Outbound email (optional)
 
@@ -128,9 +128,11 @@ To turn it on with Resend:
    `SYPHYSIO_PUBLIC_URL` to the origin your phone actually reaches. The link host
    comes from this variable, never from the request's `Host` header, so a reverse
    proxy in front does not change what lands in the mail.
-5. Leave `SYPHYSIO_REQUIRE_EMAIL_VERIFICATION=0` unless you specifically want the
-   hard gate. The soft default is deliberate: a postnatal user whose
-   confirmation mail went to spam should not be locked out of their diary.
+5. Choose `SYPHYSIO_EMAIL_CONFIRMATION`. `optional` (the default) sends the link
+   and shows a reminder but never locks anyone out — a postnatal user whose mail
+   went to spam should not be shut out of their own diary. `off` skips the whole
+   business if you would rather not run outbound mail for this app at all, and
+   `required` is there if you want the hard gate.
 
 Developing without sending anything:
 

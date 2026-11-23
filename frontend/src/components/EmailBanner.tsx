@@ -1,9 +1,10 @@
 /* "Confirm your email" strip.
 
-Shown only when this install actually sends email (an account on a server with no
-mail configured comes back `is_verified: true`), and it is deliberately a strip,
-not a modal: logging a symptom while unconfirmed is fine, and nothing about
-someone's recovery diary should be held hostage by a mail provider.
+Shown only when this install actually asks about email: an account on a server
+with no mail configured, or with SYPHYSIO_EMAIL_CONFIRMATION=off, comes back
+`is_verified: true`. It is deliberately a strip, not a modal: logging a symptom
+while unconfirmed is fine, and nothing about someone's recovery diary should be
+held hostage by a mail provider.
 */
 
 import { useCallback, useState } from "react";

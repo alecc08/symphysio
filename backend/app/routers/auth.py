@@ -90,7 +90,7 @@ async def _issue_confirmation(
     The send itself is queued as a background task by the caller: the response must
     not depend on Resend being reachable.
     """
-    if not settings.email_enabled:
+    if not settings.confirmation_enabled:
         return None
     recent = await count_recent_sends(db, user_id, 3600)
     if recent >= settings.email_sends_per_hour:
@@ -128,9 +128,10 @@ async def register(
             detail="An account with that email already exists.",
         )
 
-    # Without email there is nothing to confirm, so the account is simply verified;
-    # a LAN deployment with no outbound mail stays fully usable.
-    verified = 0 if settings.email_enabled else 1
+    # Nothing to confirm when the admin turned email off or no transport is
+    # configured, so the account is simply verified and a LAN-only deployment
+    # stays fully usable.
+    verified = 0 if settings.confirmation_enabled else 1
     user_id = new_id()
     await db.execute(
         "INSERT INTO users (id, email, password_hash, created_at_utc, is_verified)"
@@ -145,7 +146,7 @@ async def register(
         background.add_task(_deliver, mailer, confirmation_message(settings, payload.email, token))
 
     # In hard mode a new account cannot use its session until the link is clicked.
-    if settings.require_email_verification and settings.email_enabled:
+    if settings.require_email_verification and settings.confirmation_enabled:
         return AuthOut(
             user=UserOut(
                 id=user_id,
@@ -326,10 +327,10 @@ async def verify_resend(
     mailer: MailerDep,
 ) -> Response:
     """Re-send the confirmation link. The previous link stops working."""
-    if not settings.email_enabled:
+    if not settings.confirmation_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email confirmation is not configured on this server.",
+            detail="Email confirmation is not enabled on this server.",
         )
     if user.get("is_verified"):
         raise HTTPException(

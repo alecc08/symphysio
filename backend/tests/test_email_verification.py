@@ -306,7 +306,7 @@ def _mailer_settings(**overrides: object) -> Settings:
         "public_url": PUBLIC_URL,
         "email_verification_ttl_seconds": 86_400,
         "email_sends_per_hour": 3,
-        "require_email_verification": False,
+        "email_confirmation": "optional",
     }
     return Settings(**{**base, **overrides})  # type: ignore[arg-type]
 
@@ -370,7 +370,7 @@ def test_no_key_never_builds_a_resend_transport(monkeypatch: pytest.MonkeyPatch)
 def test_hard_mode_blocks_login_until_verified(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _configure(tmp_path, monkeypatch, "hard.sqlite", SYPHYSIO_REQUIRE_EMAIL_VERIFICATION="1")
+    _configure(tmp_path, monkeypatch, "hard.sqlite", SYPHYSIO_EMAIL_CONFIRMATION="required")
     with TestClient(create_app()) as client:
         body = register_by_mail(client)
         assert body["user"]["is_verified"] is False
@@ -395,12 +395,12 @@ def test_hard_mode_without_email_refuses_to_start(
         tmp_path,
         monkeypatch,
         "none.sqlite",
-        SYPHYSIO_REQUIRE_EMAIL_VERIFICATION="1",
+        SYPHYSIO_EMAIL_CONFIRMATION="required",
         RESEND_API_KEY="",
         SYPHYSIO_EMAIL_FROM="",
         SYPHYSIO_PUBLIC_URL="",
     )
-    with pytest.raises(RuntimeError, match="email is not configured"), TestClient(create_app()):
+    with pytest.raises(RuntimeError, match="no mail transport"), TestClient(create_app()):
         pass
 
 
@@ -425,3 +425,36 @@ def test_unconfigured_email_leaves_the_account_plain_usable(
             "/api/v1/auth/verify/resend", json={}, headers=csrf_headers(client)
         )
         assert response.status_code == 409
+
+
+def test_the_admin_can_turn_the_whole_flow_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mail may be configured for other reasons; that must not force nagging.
+
+    With SYPHYSIO_EMAIL_CONFIRMATION=off nothing is mailed, no token row exists,
+    accounts are born confirmed, and asking for a link is refused.
+    """
+    _configure(tmp_path, monkeypatch, "off.sqlite", SYPHYSIO_EMAIL_CONFIRMATION="off")
+    with TestClient(create_app()) as client:
+        body = register_by_mail(client)
+        assert body["user"]["is_verified"] is True
+        assert outbox(client) == []
+
+        rows = sqlite3.connect(tmp_path / "off.sqlite").execute(
+            "SELECT COUNT(*) FROM email_verifications"
+        ).fetchone()[0]
+        assert rows == 0
+
+        refused = client.post("/api/v1/auth/verify/resend", json={}, headers=csrf_headers(client))
+        assert refused.status_code == 409
+        assert "not enabled" in refused.json()["detail"]
+
+
+def test_an_unknown_confirmation_mode_refuses_to_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A typo in the mode must not quietly mean "whatever the default was"."""
+    _configure(tmp_path, monkeypatch, "typo.sqlite", SYPHYSIO_EMAIL_CONFIRMATION="yes-please")
+    with pytest.raises(ValueError, match="SYPHYSIO_EMAIL_CONFIRMATION"), TestClient(create_app()):
+        pass
