@@ -33,7 +33,7 @@ data/
 .idea/
 .vscode/
 *.log
+.playwright-mcp
 
 # Generated
-backend/app/data/common_passwords.txt.gz
 frontend/public/icons/generated/

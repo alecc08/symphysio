@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Re-run dependency audits weekly: CVEs appear after the code was written.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install locked dependencies
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check app tests scripts
+      - name: Tests
+        run: uv run pytest
+      - name: Dependency audit (pip-audit)
+        run: uv run pip-audit --strict --desc on
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck and build
+        run: npm run build
+      - name: Dependency audit (npm audit)
+        run: npm audit --audit-level=high
+
+  image:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image
+        run: docker build -t symphysio:ci .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name symphysio-smoke -p 8090:8000 -v "$PWD/ci-data:/data" symphysio:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/healthz >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs symphysio-smoke
+          test "${ok:-}" = "1"
+          curl -fsS http://127.0.0.1:8090/ | grep -q 'id="root"'

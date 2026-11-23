@@ -1,0 +1,38 @@
+services:
+  symphysio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: symphysio:latest
+    container_name: symphysio
+    restart: unless-stopped
+    # Bind to localhost and put your reverse proxy (Caddy/Traefik/nginx) in front
+    # with TLS: Secure cookies and the CSP's upgrade-insecure-requests assume HTTPS.
+    ports:
+      - "127.0.0.1:8090:8000"
+    environment:
+      SYPHYSIO_COOKIE_SECURE: "1"
+      SYPHYSIO_SESSION_TTL_DAYS: "30"
+      SYPHYSIO_RATE_LIMIT: "1"
+      SYPHYSIO_RATE_LIMIT_ATTEMPTS: "10"
+    volumes:
+      # A named volume keeps ownership right (the image runs as uid 10001).
+      - symphysio-data:/data
+      # Prefer a bind mount? Create it first, then chown it to the container user:
+      #   mkdir -p data && sudo chown 10001:10001 data
+      # and replace the line above with:  - ./data:/data
+    # Hardened: read-only root filesystem, only /data and /tmp are writable.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 384m
+    labels:
+      org.opencontainers.image.title: "Symphysio"
+
+volumes:
+  symphysio-data:

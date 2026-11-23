@@ -1,0 +1,154 @@
+# UI design system
+
+The product is a **tap target with a database behind it**, so the design system
+optimises for: one thumb, one hand, in profile, in daylight, while holding a
+baby. Everything else is secondary.
+
+## The interaction contract
+
+| Surface | Contract |
+| --- | --- |
+| Log | 2 taps to record anything: tile → preset. Optional detail is always behind an explicit control, never in the way. |
+| Every write | an Undo pill for 5 s that reverses it (client-side re-`POST` for deletes, `DELETE` for creates) |
+| Every quick-log drawer | a `Now / -15m / -1h / -3h / Custom` time strip, because a late entry with the wrong timestamp corrupts the lag analysis |
+| Presets | add, remove, reorder, restore — from the drawer *and* Settings, never locked behind an admin screen |
+| Numbers | every chart states its window and its units; a chart with too little data says so instead of drawing something confident |
+
+## Palette
+
+Tokens live in `src/index.css` under `@theme` (Tailwind 4). Dark mode re-declares
+the same custom properties under `prefers-color-scheme: dark`, so no class
+juggling and no flash.
+
+| Token | Light | Dark | Used for |
+| --- | --- | --- | --- |
+| `canvas` | `#f8fafc` | `#0b1220` | page |
+| `card` | `#ffffff` | `#172033` | sheets, cards, inputs |
+| `ink` | `#0f172a` | `#e8eefc` | text |
+| `muted` | `#64748b` | `#93a4c2` | captions, secondary |
+| `line` | `#e2e8f0` | `#273349` | hairlines, empty bars |
+| `physio` | `#0d9488` | `#0d9488` | Physio fills, primary buttons |
+| `symptom` | `#e11d48` | `#e11d48` | Symptom fills, severity ≥ 7 |
+| `relief` | `#4f46e5` | `#4f46e5` | Relief/Meds fills |
+| `trigger` | `#d97706` | `#d97706` | Trigger fills |
+| `physio-ink` … `trigger-ink` | same hues | brightened (`#2dd4bf`, `#fb7185`, `#818cf8`, `#fbbf24`) | **icon line-art and text accents** |
+| `*-soft` | pale tint | deep tint | tile and chip backgrounds |
+
+The `-ink` pair exists because a mid-tone accent on a deep tint is unreadable in
+dark mode while the same accent must stay dark-on-pale in light mode. Keeping one
+token for both meant brightening `physio` and breaking the white text on
+`bg-physio` buttons, so fills and line-art got separate tokens.
+
+Rules:
+
+- Four domains, four hues, used consistently: teal = exercise, rose = symptom,
+  indigo = relief, amber = trigger. A user should be able to read the History
+  feed by colour alone.
+- Never more than one hue per surface; the tile carries its own tint plus border
+  (`bg-physio-soft` + `border-physio/25`).
+- Severity drives colour: 1–3 teal, 4–6 amber, 7–10 rose.
+
+## Tiles
+
+```
+┌─ rounded-tile (1.25rem), border/25, tint background, p-4 ─┐
+│ Label            text-lg font-extrabold tracking-tight ink │
+│                                                         │
+│ caption                    hero icon 44px, domain hue     │
+│ text-xs font-semibold muted                               │
+└─────────────────────────────────────────────────────────┘
+min-height 124px · active: scale(0.96), shadow removed
+```
+
+Home is a 2×2 grid: Physio, Symptoms, Relief/Meds, Triggers. Four tiles is the
+whole logging vocabulary; anything else is a preset inside one of them.
+
+## Iconography
+
+`src/components/icons/`: hand-written SVG, no icon library, no emoji.
+
+- **Duotone**: a soft-filled body (`fill: currentColor; fill-opacity: .13`) plus
+  `currentColor` strokes at 2 (primary) / 1.3 (detail, 40–60 % opacity). Three
+  weights give depth without colour noise.
+- **Canvas**: heroes on 48×48, compact variants on 24×24, brand mark on 24×24.
+- **`currentColor` only.** No hex inside the glyphs, so dark mode, hover and
+  active states are one class change.
+- **Motifs are pelvic-floor-first, not gym clip-art**: a hammock lifting a load
+  (physio), a body map with a flare at the pelvic floor (symptoms), a drop over
+  heat waves (relief), footprints landing on the hammock (triggers). The
+  hammock recurs, which is what makes the set read as one family.
+- **Geometry is reviewed as pixels**, not as paths: candidates are rendered at
+  96 px and 44 px on both light and dark tint chips and compared before anything
+  ships. At 44 px, thin detail layers disappear and closed shapes read as
+  balloons, which is why the hammock is open at the top and the flare is a solid
+  star.
+- The app icon (`public/icons/app-icon.svg` → `scripts/make_icons.py`) uses the
+  same hammock mark with a rose lift chevron; PNG sizes (192, 512, maskable 512,
+  apple-touch 180) are generated, never hand-edited.
+
+## Motion
+
+`src/styles/animations.css` — five named animations, nothing else.
+
+| Class | What | Duration |
+| --- | --- | --- |
+| `log-tile` | press: `scale(.96)` + shadow | 140 ms |
+| `animate-check-draw` | tick stroke draw on save | 280 ms |
+| `sheet-enter` | quick-log drawer rise | 220 ms |
+| `toast-enter` / `row-enter` | Undo pill, feed rows | 180 / 160 ms |
+| `bar-grow` | chart bars `scaleY(.05 → 1)` | 260 ms |
+
+Easing is one curve, `cubic-bezier(.16,1,.3,1)` (or `.22,1,.36,1` for the press)
+— everything arrives with a decelerating settle. Only `transform`, `opacity` and
+`stroke-dashoffset` are animated: no layout properties, so animation never
+reflows a list you are trying to tap. `prefers-reduced-motion: reduce` disables
+all of it and resets the transforms.
+
+**CSP constraint:** the app runs `style-src 'self'` with no `unsafe-inline`, so
+React must not emit `style="…"` attributes. Chart bar heights are therefore
+applied through the DOM API in an effect (`node.style.height = …`), not as an
+inline style. Anything that needs a computed geometry goes through a ref.
+
+## Type and metrics
+
+- Font: the system stack (`-apple-system, … Inter, Segoe UI`), no webfont — one
+  less thing to download on a hotel connection, and it matches the OS chrome of
+  the home-screen icon.
+- Scale: `text-2xl` page title, `text-lg` tile label, default body, `text-xs`
+  captions and chips. Tabular numerals (`tabular-nums`) on anything numeric so
+  severity grids do not jitter.
+- Radii: `--radius-tile: 1.25rem` for tiles, `rounded-2xl` for chips/sheet,
+  `rounded-full` for pill buttons.
+- Touch targets ≥ 44 px: severity buttons are `h-11` and share the row width,
+  chips are `py-2`, the bottom nav is icon + label with safe-area padding.
+- Layout is `max-w-lg` centred; the same build is used at 390×844 and on a
+  desktop browser without a second design.
+
+## States
+
+- **Loading**: one pulsing "Loading Symphysio…" line; no spinners inside tiles.
+- **Empty**: every list explains what to log rather than showing a blank card.
+- **Error**: an inline rose message from the API's `detail`, never a toast storm;
+  the toast area holds only one Undo pill at a time.
+- **Offline**: the service worker serves the shell, and the offline page says the
+  network is missing rather than pretending the data is there. API responses are
+  never cached, so a stale number is structurally impossible.
+- **Unauthenticated**: the auth screen *is* the register screen — one form, one
+  button, with the password rules shown as you type.
+
+## Accessibility
+
+- Every control is a real `<button>`/`<input>`; toggles expose `aria-pressed`,
+  drawers expose `aria-expanded`, icons are `aria-hidden` with the label on the
+  control ("Remove Scar Pain", "Edit Stiffness").
+- `:focus-visible` draws a 2 px teal outline with a 2 px offset — visible on
+  keyboard, invisible to touch.
+- The drawer traps Escape (closes), and the backdrop is a button with an
+  `aria-label`.
+- Severity is ten large buttons (1–10; the optional pain-during scale runs 0–10),
+  not a slider: a slider is hard to set precisely one-handed and exposes no value
+  to a screen reader.
+- Colour is never the only signal: severity also prints the number, domains print
+  their label.
+- Contrast: text tokens are ≥ 4.5:1 in both modes; the `-ink` accents exist in
+  part to keep icon strokes ≥ 3:1 against the dark tints.

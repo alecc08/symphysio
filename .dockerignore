@@ -1,0 +1,16 @@
+.git
+.github
+data
+docs
+**/__pycache__
+**/.venv
+**/node_modules
+frontend/dist
+frontend/.vite
+backend/data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+.scratch
+scratch

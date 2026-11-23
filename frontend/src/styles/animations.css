@@ -1,0 +1,96 @@
+/* Simple, purposeful animations: only GPU-composited properties are touched. */
+
+/* 1. Tactile Home Tile Press */
+.log-tile {
+  transition:
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 140ms ease;
+}
+.log-tile:active {
+  transform: scale(0.96);
+}
+
+/* 2. SVG Checkmark Stroke Draw */
+.animate-check-draw {
+  stroke-dasharray: 28;
+  stroke-dashoffset: 28;
+  animation: check-draw 280ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 3. Quick-Log Bottom Sheet Entrance */
+.sheet-enter {
+  animation: sheet-up 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 4. Toast + fade-in for feed rows */
+.toast-enter {
+  animation: toast-up 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes toast-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row-enter {
+  animation: row-in 160ms ease-out forwards;
+}
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Bars grow once on mount (transform only). */
+.bar-grow {
+  transform-origin: bottom;
+  animation: bar-grow 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes bar-grow {
+  from {
+    transform: scaleY(0.05);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* 5. Accessibility Override */
+@media (prefers-reduced-motion: reduce) {
+  .log-tile,
+  .animate-check-draw,
+  .sheet-enter,
+  .toast-enter,
+  .row-enter,
+  .bar-grow {
+    animation: none;
+    transition: none;
+    stroke-dashoffset: 0;
+    transform: none;
+  }
+}
