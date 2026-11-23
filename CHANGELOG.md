@@ -13,6 +13,31 @@ numbers mean here.
 Nothing beyond the current release. The next items are designed first, in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## [0.1.1] - 2026-11-23
+
+Release tooling only — no application code changed, and the container is the same
+apart from the `.github/workflows` files, which are not in the image.
+
+### Fixed
+
+- **A release published no image.** `v0.1.0` got a tag and a GitHub Release but no
+  container: `release.yml` ends by dispatching `build.yml` for the tag it created
+  (a tag made with `GITHUB_TOKEN` does not fire `on.push.tags`), and
+  `workflow_dispatch` had been removed from `build.yml` in order to silence
+  zizmor's `cache-poisoning` rule. The dispatch answered HTTP 422 and the release
+  half-completed. Dispatch is restored, the ignore comment now explains why the
+  rule does not apply here, and the cache stays scoped per ref.
+- **The version tag on the image is stated explicitly** (`type=raw` from `VERSION`
+  when the ref is a tag). `docker/metadata-action`'s `semver` type is
+  event-sensitive and a dispatched run is not a tag push, so `:0.1.0` would have
+  depended on an implementation detail.
+
+### Notes
+
+- `ghcr.io/alecc08/symphysio:0.1.0` does not exist and will not be created: the
+  tag at that commit carries the broken workflow, and a published tag is never
+  moved. **Deploy `0.1.1`** (or `:latest`).
+
 ## [0.1.0] - 2026-11-23
 
 The whole of the v1 brief ([REQUIREMENTS.md](REQUIREMENTS.md)): a mobile-first,
@@ -88,5 +113,6 @@ symptoms, in one container with one SQLite file and no third-party services.
 - Dependabot for npm, pip, Docker and Actions, with `uv.lock` verified on every
   PR.
 
-[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/alecc08/symphysio/releases/tag/v0.1.1
 [0.1.0]: https://github.com/alecc08/symphysio/releases/tag/v0.1.0

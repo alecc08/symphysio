@@ -52,13 +52,15 @@ possible at all.
 The package is public: a deploy host needs no registry credentials.
 
 ```bash
-docker pull ghcr.io/alecc08/symphysio:0.1.0
+docker pull ghcr.io/alecc08/symphysio:0.1.1
 ```
 
 ## Rules
 
 - A published tag is never moved or deleted. If `0.1.0` was wrong, release
-  `0.1.1`.
+  `0.1.1` — which is not hypothetical: `v0.1.0` was tagged and released with a
+  broken build trigger, so `ghcr.io/...:0.1.0` does not exist and `0.1.1` is the
+  image that matches that release.
 - The version the running container reports is the truth:
   `curl -s https://<host>/api/v1/openapi.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["version"])'`
 - If the release workflow fails halfway (tag created, no release body), the tag

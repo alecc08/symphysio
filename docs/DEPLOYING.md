@@ -74,7 +74,7 @@ whole internet means four more decisions, all cheap:
 3. **HSTS at the proxy** (`max-age=31536000; includeSubDomains`). The app sends
    CSP with `upgrade-insecure-requests` but not HSTS, because getting this value
    wrong is a lockout and it belongs with the certificate.
-4. **Pin the image tag** — `ghcr.io/alecc08/symphysio:0.1.0`, not `:latest`.
+4. **Pin the image tag** — `ghcr.io/alecc08/symphysio:0.1.1`, not `:latest`.
    Migrations are forward-only, so `:latest` moving under you means a rollback
    needs a restore, not a pull (see [RELEASES.md](RELEASES.md)).
 
