@@ -10,7 +10,26 @@
    at 2 (primary) / 1.3 (detail, ~55 % opacity), so the set inherits the tile's
    accent colour and stays a family. Candidates were rendered at 88 px and 44 px
    on light and dark tint chips before anything was chosen.
+
+   The brand mark at the bottom is the exception: full colour, generated, and
+   documented where it sits.
 */
+
+import { useId } from "react";
+
+import {
+  BRAND_BAND_BODY,
+  BRAND_BAND_PAD,
+  BRAND_CRUTCH_PATHS,
+  BRAND_CRUTCH_TRANSFORM,
+  BRAND_GREEN,
+  BRAND_HEART,
+  BRAND_ROD_HEAD,
+  BRAND_ROD_SNAKE,
+  BRAND_ROD_STAFF,
+  BRAND_ROD_TRANSFORM,
+  BRAND_WHITE,
+} from "./brandmark";
 
 type IconProps = { className?: string };
 
@@ -29,14 +48,69 @@ const detail = { strokeWidth: 1.3, opacity: 0.55 } as const;
 
 /* --------------------------------------------------------------- brand mark */
 
-/** Product mark: the pelvic floor as a supporting arc, lifted. One white stroke
- *  version also lives in public/icons/app-icon.svg; it has to survive 16 px. */
+/** The product mark: a heart, the Rod of Asclepius standing inside it, a
+ *  forearm crutch leaning in from the right to hold it up, and a plaster across
+ *  the upper left. The plaster is not painted on top of the heart - it is cut
+ *  clean through it and repainted in the heart's own colour where it sticks out,
+ *  which is what fuses the four parts into one object.
+ *
+ *  The numbers are generated: scripts/gen_brand_assets.py writes this set, the
+ *  files under public/icons and the launcher PNGs from one geometry, so the
+ *  in-app mark can never drift from the app icon. The rod is the U+2695 glyph
+ *  geometry from Twemoji, CC-BY 4.0 (docs/CREDITS.md).
+ *
+ *  It is also the one icon in this file that is not `currentColor`: the plaster
+ *  is a knockout, and the trick only reads if both sides of the heart are known
+ *  colours - exactly two of them, `BRAND_GREEN` and `BRAND_WHITE`. Mask ids are
+ *  per instance, so the mark can appear more than once per page. */
 export function BrandMark({ className = "w-5 h-5" }: IconProps) {
+  const uid = useId().replace(/:/g, "");
+  const cut = `bm-cut-${uid}`;
+  const out = `bm-out-${uid}`;
   return (
-    <svg viewBox="0 0 24 24" {...base} strokeWidth={2.1} className={className}>
-      <path {...base} {...soft} d="M4 10.5c0 5.6 3.6 9.5 8 9.5s8-3.9 8-9.5" />
-      <path {...base} strokeWidth={2.2} d="M12 15V4" />
-      <path {...base} strokeWidth={2.2} d="M8.4 7.6 12 4l3.6 3.6" />
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <defs>
+        <mask id={cut}>
+          <rect width="24" height="24" fill="#fff" />
+          <path fill="#000" d={BRAND_BAND_BODY} />
+          <path fill="#fff" d={BRAND_BAND_PAD} />
+        </mask>
+        <mask id={out}>
+          <rect width="24" height="24" fill="#fff" />
+          <path fill="#000" d={BRAND_HEART} />
+          <path fill="#000" d={BRAND_BAND_PAD} />
+        </mask>
+      </defs>
+      <g mask={`url(#${cut})`}>
+        <path fill={BRAND_GREEN} d={BRAND_HEART} />
+        <g fill={BRAND_WHITE}>
+          <g transform={BRAND_ROD_TRANSFORM}>
+            <circle cx={BRAND_ROD_HEAD.cx} cy={BRAND_ROD_HEAD.cy} r={BRAND_ROD_HEAD.r} />
+            <path d={BRAND_ROD_SNAKE} />
+            <path d={BRAND_ROD_STAFF} />
+          </g>
+        </g>
+        <g
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          transform={BRAND_CRUTCH_TRANSFORM}
+        >
+          <g stroke={BRAND_GREEN}>
+            {BRAND_CRUTCH_PATHS.map(([d, , halo]) => (
+              <path key={d} strokeWidth={halo} d={d} />
+            ))}
+          </g>
+          <g stroke={BRAND_WHITE}>
+            {BRAND_CRUTCH_PATHS.map(([d, w]) => (
+              <path key={d} strokeWidth={w} d={d} />
+            ))}
+          </g>
+        </g>
+      </g>
+      <g mask={`url(#${out})`}>
+        <path fill={BRAND_GREEN} d={BRAND_BAND_BODY} />
+      </g>
     </svg>
   );
 }
@@ -56,30 +130,45 @@ export function PhysioHero({ className = "w-12 h-12" }: IconProps) {
   );
 }
 
-/** Symptoms: a body with a pain bolt where it hurts. */
+/** Symptoms: a small body with three cartoon pain bolts around it — the visual
+ *  shorthand for "something hurts here" that everyone already knows. */
 export function SymptomHero({ className = "w-12 h-12" }: IconProps) {
   return (
     <svg viewBox="0 0 48 48" {...base} className={className}>
-      <circle {...base} {...soft} cx="24" cy="8" r="4.4" />
+      <path {...base} {...solid} d="M11.5 9.5 6 17.5h3.4L7 23.5l6.6-8.4h-3.7z" />
+      <path {...base} {...solid} d="M36.5 9.5 42 17.5h-3.4l2.4 6-6.6-8.4h3.7z" />
+      <path {...base} {...solid} opacity={0.85} d="M24 2.5l-4.2 6.4h2.9L20.6 14 26 7.4h-3.1z" />
+      <circle {...base} {...soft} cx="24" cy="21" r="3.6" />
       <path
         {...base}
         {...soft}
-        d="M17.5 15c-3 2-4.6 5.3-4.6 9 0 3 .9 5.4 2.2 7-1.4 3.9-.7 7.6 1.7 10.4 2.8 3.2 15.8 3.2 18.6 0 2.4-2.8 3.1-6.5 1.7-10.4 1.3-1.6 2.2-4 2.2-7 0-3.7-1.6-7-4.6-9z"
+        d="M18.7 26.6c-2.4 1.6-3.7 4.2-3.7 7.1 0 2.4.7 4.3 1.8 5.5-1.1 3.1-.6 6 1.4 8.2 2.3 2.5 11.3 2.5 13.6 0 1.9-2.2 2.5-5.1 1.4-8.2 1.1-1.2 1.8-3.1 1.8-5.5 0-2.9-1.3-5.5-3.7-7.1z"
       />
-      <path {...base} {...solid} d="M24 22l-7 11h4.8L20 43l9.6-12.5H24.6z" />
     </svg>
   );
 }
 
-/** Relief / meds: a thermometer with a snowflake — heat and cold therapy. */
+/** Relief / meds: thermometer and snowflake (heat and cold) plus a pill. */
 export function ReliefHero({ className = "w-12 h-12" }: IconProps) {
   return (
     <svg viewBox="0 0 48 48" {...base} className={className}>
-      <path {...base} {...soft} d="M17.5 8a4 4 0 0 1 8 0v17.6a6.2 6.2 0 1 1-8 0z" />
-      <path {...base} strokeWidth={2.2} d="M21.5 13.5v15" />
-      <circle {...base} {...solid} cx="21.5" cy="34" r="3.1" />
-      <path {...base} {...detail} d="M28 13h4.5M28 18.5h4.5M28 24h4.5" />
-      <path {...base} strokeWidth={1.6} d="M38 33h8M42 29v8M39.2 30.2l5.6 5.6M44.8 30.2l-5.6 5.6" />
+      <path {...base} {...soft} d="M13 7.5a4 4 0 0 1 8 0v17.6a6.2 6.2 0 1 1-8 0z" />
+      <path {...base} strokeWidth={2.2} d="M17 13v15" />
+      <circle {...base} {...solid} cx="17" cy="33.5" r="3.1" />
+      <path {...base} {...detail} d="M23.5 12.5H28M23.5 18H28" />
+      <path {...base} strokeWidth={1.6} d="M35.5 11h9M40 6.5v9M36.8 7.8l6.4 6.4M43.2 7.8l-6.4 6.4" />
+      <rect
+        {...base}
+        x="30"
+        y="28"
+        width="15"
+        height="9"
+        rx="4.5"
+        transform="rotate(-28 37.5 32.5)"
+        fill="currentColor"
+        fillOpacity={0.18}
+      />
+      <path {...base} strokeWidth={1.5} opacity={0.7} d="M33 36.4 42 28.6" />
     </svg>
   );
 }

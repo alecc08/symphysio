@@ -95,12 +95,30 @@ Craft rules that keep the four a family:
 - **Compact icons are re-drawn, not shrunk.** The 24 px versions drop the detail
   layer, thicken strokes and keep only the parts that survive; a scaled-down hero
   loses the toe dots and the snowflake, which is the whole point of the glyph.
-- **The brand mark is the one abstract shape** (`BrandMark`, and the same mark in
-  `public/icons/app-icon.svg`): the pelvic floor as a supporting arc with a lift
-  arrow through it. A logo may need explaining once; a tile icon may not. It is
-  tested at 16 px, because it is also the favicon.
-- PNG icon sizes (192, 512, maskable 512, apple-touch 180) are generated from
-  `app-icon.svg` by `scripts/make_icons.py`, never hand-edited.
+- **The brand mark is the exception, not a fifth tile icon** (`BrandMark`, and the
+  same geometry in `public/icons/brandmark*.svg`): a heart, the Rod of Asclepius
+  standing inside it, a forearm crutch leaning in from the right to hold it up,
+  and a plaster across the upper left. **Two colours, no gradient**: one green and
+  white, the green being the UI's own `--color-physio` and the manifest's
+  `theme_color`. It is not `currentColor`, because the plaster is a knockout and
+  the trick only reads if both sides of the heart are known colours. What looks
+  like a third colour is the page showing through the plaster — light theme reads
+  green + white, dark theme reads green + near-black, with no second asset.
+- **The mark is one object, not clipart.** The plaster is cut clean *through* the
+  heart — inside the heart's silhouette it is negative space with its pad left
+  standing, outside it is painted in the heart's own colour. That single rule is
+  what binds rod, crutch and heart into one shape instead of four stickers. The
+  crutch carries a halo stroke in the heart's colour: invisible inside, an edge
+  that keeps the thin parts alive where the crutch leaves the heart.
+- **The rod is not hand drawn.** It is the U+2695 glyph geometry from Twemoji
+  (CC-BY 4.0, see `docs/CREDITS.md`), scaled onto the heart. Drawn-from-scratch
+  attempts read as a fence or an eel; the glyph is proven at emoji sizes.
+- PNG icon sizes (512, maskable 512, 192, apple-touch 180), `favicon.svg`,
+  `app-icon.svg`, `brandmark.svg`, `brandmark-reversed.svg` and the TS geometry
+  the app renders all come from **`scripts/gen_brand_assets.py`** — one geometry,
+  run it and every artifact moves together. The favicon is the tile rather than
+  the bare mark, because a 16 px heart loses the rod entirely while a knocked-out
+  heart on a tile still reads.
 - Icons are used **redundantly with colour and text**: the History feed prints the
   kind glyph next to the entry, so the feed is readable without relying on the
   hue alone.
