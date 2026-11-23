@@ -39,7 +39,7 @@ symptoms, in one container with one SQLite file and no third-party services.
 - **PWA** — installable on iOS and Android, offline app shell, brand icons and
   a service worker that can be versioned out of cache.
 - **Email confirmation (optional)** — a single-use 256-bit token, stored only as
-  a SHA-256 digest, 24 h TTL, never in a logged URL. `SYPHYSIO_EMAIL_CONFIRMATION`
+  a SHA-256 digest, 24 h TTL, never in an API URL. `SYPHYSIO_EMAIL_CONFIRMATION`
   is the admin's switch: `optional` (default) mails a link and shows a reminder
   banner but never blocks anyone, `required` gates sign-in, and `off` means this
   app never sends mail at all. With no mail transport configured the app behaves
@@ -56,7 +56,17 @@ symptoms, in one container with one SQLite file and no third-party services.
   `HttpOnly` / `Secure` / `SameSite=Lax`; sign out one device or all of them.
 - Double-submit CSRF on every state-changing `/api/v1` call, in addition to
   `SameSite=Lax`.
-- Sliding-window rate limiting on `/api/v1/auth/*`, per IP and per email.
+- Sliding-window rate limiting on `/api/v1/auth/*`, per IP and per email. Every
+  rejected sign-up is charged to it — weak password, an address that exists, or
+  registration being closed. Until now the `register:` window was checked but
+  never filled, so the one unauthenticated endpoint that pays for an Argon2id
+  hash could not answer `429` at all.
+- **Sign-up can be closed** with `SYPHYSIO_ALLOW_REGISTRATION=0`, for any install
+  the internet can reach once its own accounts exist.
+- **No uvicorn access log in the image.** The confirmation link is opened as
+  `GET /verify?token=…`, and uvicorn recorded that request line verbatim, putting
+  live tokens in `docker logs`. Traffic belongs at the reverse proxy, with the
+  `token` parameter masked — [docs/DEPLOYING.md](docs/DEPLOYING.md) says how.
 - CSP with no `unsafe-inline` (`script-src 'self'`, `style-src 'self'`),
   `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
   `Permissions-Policy` denying camera/mic/geolocation/payment, `no-store` on

@@ -48,6 +48,13 @@ Double-submit, enforced by middleware before routing:
   (900 s) of `429` with `Retry-After`.
 - Login is additionally keyed by email, so a bot rotating IPs still cannot grind
   one account.
+- Every rejected sign-up is charged to the limiter: weak password, an address
+  that already exists, or registration being closed. That matters more than it
+  looks — registration is the only unauthenticated endpoint that pays for an
+  Argon2id hash (64 MiB of work per attempt), so an unmetered `/auth/register`
+  is a cheap way to spend a home server's CPU and memory. (It was exactly that
+  until the router started recording these failures: the window was checked but
+  never filled, so `429` could not happen.)
 - In-process and per-worker: run **one** uvicorn worker (see DEPLOYING.md). Put
   the limiter in Redis if you ever need more than one process.
 - The client key is the first entry of `X-Forwarded-For` when the header is
@@ -55,18 +62,38 @@ Double-submit, enforced by middleware before routing:
   `X-Forwarded-For` (Caddy, Traefik, nginx), which is why the compose file binds
   to `127.0.0.1`: expose uvicorn directly and a client can forge the header.
 
+## Registration
+
+- Open by default — the first account has to come from somewhere, and a home
+  server on a LAN has no strangers to keep out.
+- `SYPHYSIO_ALLOW_REGISTRATION=0` closes it: `POST /auth/register` answers `403`.
+  The refusal is charged to the IP limiter like any other rejected attempt, so
+  scanning a closed door costs the same budget as hammering an open one. Any
+  instance the internet can see should run closed once its own accounts exist —
+  [DEPLOYING.md](DEPLOYING.md) has the checklist.
+- Accepted for now: registration reveals whether an address already has an
+  account (`409` vs `201`). Closing registration removes that surface for
+  strangers; fixing it properly means always creating a pending account and
+  letting the mail decide.
+
 ## Email confirmation tokens
 
 The same shape as sessions, because the threat is the same: a long random value
 in flight, only its SHA-256 digest at rest.
 
 - 256-bit token (`secrets.token_urlsafe(32)`), stored as `sha256(token)` in
-  `email_verifications.token_hash`, TTL `SYPHYSIO_EMAIL_TTL_SECONDS` (24 h),
-  single use (`used_at_utc`).
-- The token is **never in a path**. The link is `/verify?token=…`; the SPA posts
-  it in a JSON body to `POST /api/v1/auth/verify` and rewrites the address bar
-  before anything else runs, so the token does not linger in history, in a
-  `Referer`, or in an access log's request line.
+  `email_verifications.token_hash`, TTL `SYPHYSIO_EMAIL_VERIFICATION_TTL_SECONDS`
+  (24 h), single use (`used_at_utc`).
+- The API never sees the token in a URL: the SPA posts it in a JSON body to
+  `POST /api/v1/auth/verify` and rewrites the address bar before anything else
+  runs, so it does not linger in browser history or a `Referer`.
+- **But the browser does open `GET /verify?token=…`**, so the token appears in
+  the access log of whatever serves that page. Mitigations, in order: the
+  container starts uvicorn with `--no-access-log` (the image's entrypoint, and
+  `docker-compose.yml` matches), and the reverse proxy in front should mask the
+  parameter — Traefik `--accessLog.maskedParameters=token`, or
+  `location = /verify { access_log off; }` on nginx. If you run uvicorn with its
+  access log on, confirmation tokens end up in `docker logs`.
 - Lookup is by digest, so a forged token matches no row: guessing is bounded by
   the IP counter on `/auth/*`, not by a per-account budget an attacker can probe
   to enumerate accounts.
@@ -166,7 +193,10 @@ Cache-Control: no-store
 - Only `/data` (the SQLite file) and a small `/tmp` tmpfs are writable, so a
   compromise of the process cannot install persistence on disk.
 - No secrets in the image or in git; configuration is environment variables
-  only, and nothing is logged that includes tokens, password hashes or notes.
+  only. Logging is deliberately thin: uvicorn starts with `--no-access-log`
+  because the confirmation navigation carries a live token in its query string,
+  and no application log writes tokens, password hashes or notes. Traffic
+  logging belongs at the proxy, with `token` masked.
 
 ## Deliberate gaps
 

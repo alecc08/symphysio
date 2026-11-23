@@ -156,7 +156,7 @@ GitHub Actions runs all of the above on every push and pull request, plus:
 | **History** | Unified chronological feed with filters, inline edit (severity, note, time) and delete with Undo. |
 | **Insights** | Daily counts, severity trend, hour-of-day distribution, top presets, and exercise→symptom lag correlations over a configurable window. |
 | **Settings** | Catalog manager (add / rename / reorder / remove / restore, plus a suggested-preset pool), CSV and JSON export, sign out one or all devices. |
-| **Account** | Optional email confirmation (Resend, or nothing at all): a single-use 24 h link, a reminder banner, and a soft gate that keeps an unconfirmed account usable. |
+| **Account** | Optional email confirmation (Resend, or nothing at all): a single-use 24 h link, a reminder banner, and a gate that is the admin's choice — `off`, `optional` (default) or `required`. Sign-up itself can be closed with `SYPHYSIO_ALLOW_REGISTRATION=0`. |
 | **API** | `/api/v1` JSON only: auth, catalog, logs, timeline, analytics, export. Contract in [docs/API.md](docs/API.md). |
 
 ## Documentation

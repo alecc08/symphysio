@@ -153,7 +153,9 @@ recorded in DEPLOYING.md when this lands.
   logged masked (`p…e@example.com`) at `INFO`, full address only at `DEBUG`.
 - The token appears in a URL the user clicks, which means it can appear in a
   proxy access log. Mitigations: single use, 24 h TTL, `Referrer-Policy:
-  no-referrer` (already set), and the SPA removing it from history immediately.
+  no-referrer` (already set), the SPA removing it from history immediately, and
+  the image starting uvicorn with `--no-access-log` so the request line is not
+  recorded by the app itself either.
 
 ### Tests
 

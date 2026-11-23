@@ -15,6 +15,12 @@ services:
       SYPHYSIO_SESSION_TTL_DAYS: "30"
       SYPHYSIO_RATE_LIMIT: "1"
       SYPHYSIO_RATE_LIMIT_ATTEMPTS: "10"
+      # Once your own accounts exist, close the front door if anything outside
+      # your own network can reach this host (docs/DEPLOYING.md).
+      # SYPHYSIO_ALLOW_REGISTRATION: "0"
+      # off | optional | required. "off" if you would rather this app never send
+      # mail at all; leaving it unset means "optional".
+      # SYPHYSIO_EMAIL_CONFIRMATION: "optional"
     volumes:
       # A named volume keeps ownership right (the image runs as uid 10001).
       - symphysio-data:/data
