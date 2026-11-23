@@ -14,14 +14,11 @@ physical symptoms in one or two taps — with an analytics-ready SQLite database
 behind it, so you can finally answer *"does this exercise actually make the next
 24 hours better or worse?"*
 
-```
-Log grid                Undo toast              Insights
-──────────              ──────────              ─────────────────────────
-[ Physio ]   2 taps →   Logged: Chin Tucks ·    Stiffness appeared 12× within
-[ Symptoms ]  save      Undo (5 s)              1–12 h of Wall Angels
-[ Relief   ]                                    (avg lag 3.6 h, sev 5.7/10)
-[ Triggers ]
-```
+![Logging a symptom in two taps, then History and Insights](docs/media/log-flow.gif)
+
+*Two taps: the Symptoms tile, a severity, the preset. The Undo toast is already
+up before the row reaches History, and Insights is the reason to keep logging:
+which exercise this symptom tends to follow, and how long after.*
 
 - **Backend:** Python 3.12+, FastAPI, Pydantic v2, aiosqlite (raw parameterized SQL, no ORM), Argon2id, SQLite in WAL mode.
 - **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS 4, hand-drawn inline SVG icons, CSS-only animation, installable PWA (iOS/Android home screen, offline shell).
@@ -57,6 +54,22 @@ None of it is prescriptive and none of it is permanent:
   constipation, neck and wrist pain from feeding, return-to-exercise-too-soon…)
   are offered as one-tap adds and disappear once you have them.
 
+## What it looks like
+
+All of it from a seeded demo account — no real health data anywhere in this repo.
+
+| The four tiles | A symptom: severity, then the preset |
+| --- | --- |
+| ![The Log grid: Physio, Symptoms, Relief/Meds, Triggers](docs/media/log-grid.png) | ![The symptom drawer with the severity scale and time chips](docs/media/symptom-sheet.png) |
+
+| History, with Undo still up | The lag panel: what follows what |
+| --- | --- |
+| ![Unified history feed with edit and delete on each row](docs/media/history.png) | ![Symptoms that follow an exercise, with average lag and severity](docs/media/lag-correlations.png) |
+
+| Settings: your presets and your data | Dark theme, same layout |
+| --- | --- |
+| ![Catalog manager with reorder and remove, plus CSV and JSON export](docs/media/settings.png) | ![The Log grid in dark mode](docs/media/log-dark.png) |
+
 ## Quick start (development)
 
 ```bash
@@ -76,7 +89,8 @@ For plain-HTTP local development the browser still accepts the session cookie on
 
 Seed data: registration creates 10 exercise, 10 symptom and 16 relief/trigger
 presets, all editable in the quick-log drawer and in **Settings → Quick-tap
-buttons**.
+buttons**. For three weeks of plausible history — the data in every screenshot
+above — run `python3 scripts/demo_seed.py` against a throwaway instance.
 
 ## Run it for real (one container)
 

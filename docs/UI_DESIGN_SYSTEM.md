@@ -173,6 +173,16 @@ inline style. Anything that needs a computed geometry goes through a ref.
 - **Unauthenticated**: the auth screen *is* the register screen — one form, one
   button, with the password rules shown as you type.
 
+## Reference screens
+
+The README gallery covers the light theme. These two are here because they show
+rules from this file in one place: the brand mark at rest, on the canvas colour,
+and charts built from divs rather than a charting dependency.
+
+| Sign-in | Insights |
+| --- | --- |
+| ![Sign-in screen with the brand mark](media/sign-in.png) | ![Insights: counts, severity trend and the lag panel](media/insights.png) |
+
 ## Accessibility
 
 - Every control is a real `<button>`/`<input>`; toggles expose `aria-pressed`,
