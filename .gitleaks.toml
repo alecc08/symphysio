@@ -1,0 +1,13 @@
+# gitleaks: the stock rules plus one allowlist entry.
+
+# Nothing here weakens the scan. The demo passphrase below is invented, appears in
+# the README and the screenshots, and is the only value allowed through: every
+# other secret-shaped string still fails the build.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "the invented demo passphrase, not a credential: it guards a throwaway account full of made-up logs"
+regexTarget = "line"
+regex = '''sunlit-origami-42'''

@@ -22,13 +22,17 @@ import httpx
 
 random.seed(7)
 BASE = os.environ.get("SYPHYSIO_DEMO_URL", "http://127.0.0.1:8011") + "/api/v1"
-EMAIL = "demo@symphysio.example"
-PASSWORD = "sunlit-origami-42"
+# The demo account's credentials. Overridable so the script can point at any
+# install; the defaults are invented and are the one value gitleaks is told to
+# ignore (see .gitleaks.toml) - they guard a throwaway account full of made-up
+# logs, and the screenshots in this repo are built on them.
+EMAIL = os.environ.get("SYPHYSIO_DEMO_EMAIL", "demo@symphysio.example")
+PASSPHRASE = os.environ.get("SYPHYSIO_DEMO_PASSPHRASE", "sunlit-origami-42")
 client = httpx.Client(base_url=BASE, timeout=30)
 
 # Register on a fresh install, log in on one that has been seeded already.
-if client.post("/auth/register", json={"email": EMAIL, "password": PASSWORD}).status_code == 409:
-    client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
+if client.post("/auth/register", json={"email": EMAIL, "password": PASSPHRASE}).status_code == 409:
+    client.post("/auth/login", json={"email": EMAIL, "password": PASSPHRASE})
 if "symphysio_session" not in client.cookies:
     raise SystemExit(f"could not sign in to {BASE}")
 csrf = client.cookies.get("symphysio_csrf", "")
@@ -109,4 +113,4 @@ for path in ("/catalog/exercises", "/catalog/symptoms", "/catalog/contexts"):
     kind = path.split("/")[-1]
     print(f"{kind}: {len(client.get(path).json())} presets")
 print("daily rows:", len(client.get("/analytics/summary", params={"days": 30}).json().get("daily", [])))
-print(f"sign in at {BASE.rsplit('/api', 1)[0]} with {EMAIL} / {PASSWORD}")
+print(f"sign in at {BASE.rsplit('/api', 1)[0]} with {EMAIL} / {PASSPHRASE}")
