@@ -10,6 +10,7 @@ import { Sheet } from "../components/Sheet";
 import { SeverityScale } from "../components/SeverityScale";
 import { TimeChips } from "../components/TimeChips";
 import { ClockIcon, PencilIcon, TrashIcon } from "../components/icons/Ui";
+import { PhysioIcon, ReliefIcon, SymptomIcon, TriggerIcon } from "../components/icons/Tile";
 
 const FILTERS = [
   { id: "", label: "All" },
@@ -19,10 +20,23 @@ const FILTERS = [
 ] as const;
 
 const dotFor: Record<TimelineItem["event_type"], string> = {
-  exercise: "bg-physio",
-  symptom: "bg-symptom",
-  context: "bg-relief",
+  exercise: "text-physio-ink",
+  symptom: "text-symptom-ink",
+  context: "text-relief-ink",
 };
+
+/* The feed is read by icon *and* colour, so a context entry picks the relief or
+   the trigger glyph rather than a generic dot. */
+function KindGlyph({ item }: { item: TimelineItem }) {
+  const className = "h-5 w-5 shrink-0";
+  if (item.event_type === "exercise") return <PhysioIcon className={className} />;
+  if (item.event_type === "symptom") return <SymptomIcon className={className} />;
+  return item.category === "trigger" ? (
+    <TriggerIcon className={className} />
+  ) : (
+    <ReliefIcon className={className} />
+  );
+}
 
 export function HistoryPage() {
   const toast = useToast();
@@ -102,7 +116,9 @@ export function HistoryPage() {
             key={item.id}
             className="row-enter flex items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3"
           >
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotFor[item.event_type]}`} />
+            <span className={`flex shrink-0 items-center ${dotFor[item.event_type]}`}>
+              <KindGlyph item={item} />
+            </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[0.95rem] font-bold">
                 {item.definition_name ?? "Unknown"}

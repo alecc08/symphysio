@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { BottomNav, type Tab } from "./components/BottomNav";
 import { GearIcon } from "./components/icons/Ui";
-import { PhysioIcon } from "./components/icons/Tile";
+import { BrandMark } from "./components/icons/Tile";
 import { AuthPage } from "./pages/AuthPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { InsightsPage } from "./pages/InsightsPage";
@@ -41,7 +41,7 @@ function Shell() {
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-canvas/90 px-4 py-2 backdrop-blur">
           <span className="flex items-center gap-2 text-sm font-extrabold tracking-tight">
             <span className="text-physio-ink">
-              <PhysioIcon className="h-5 w-5" />
+              <BrandMark className="h-5 w-5" />
             </span>
             Symphysio
           </span>

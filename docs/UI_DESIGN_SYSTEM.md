@@ -78,7 +78,7 @@ was replaced. What ships now:
 | Physio | dumbbell with an upward arrow | "exercise, and it gets heavier" — no teaching needed, and progressive loading is the actual concept |
 | Symptoms | body silhouette with a lightning bolt over the sore area | body + bolt is already the universal shorthand for pain; the silhouette is filled so it survives at 44 px |
 | Relief / Meds | thermometer with a snowflake | heat **and** cold therapy in one shape; a heat pack alone read as an inhaler, a pill-and-thermometer pair read as a pharmacy logo |
-| Triggers | a left and a right footprint landing on a support arc | "activity you did" — mirrored on purpose: two same-curve feet look like two right feet |
+| Triggers | a left and a right footprint, walking | "activity you did" — mirrored on purpose (two same-curve feet read as two right feet), and the toe dots are what turn a blob into a foot |
 
 Craft rules that keep the four a family:
 
@@ -92,10 +92,18 @@ Craft rules that keep the four a family:
 - **Geometry is reviewed as pixels, not as paths.** Candidates go on a board
   rendered at 88 px and 44 px on light *and* dark tint chips — that is where the
   abstract set was rejected and where "two right feet" was caught.
-- The brand mark (`BrandMark`, and the app icon) deliberately keeps the abstract
-  hammock: a logo can be a idea, a tile icon cannot. PNG icon sizes (192, 512,
-  maskable 512, apple-touch 180) are generated from `app-icon.svg` by
-  `scripts/make_icons.py`, never hand-edited.
+- **Compact icons are re-drawn, not shrunk.** The 24 px versions drop the detail
+  layer, thicken strokes and keep only the parts that survive; a scaled-down hero
+  loses the toe dots and the snowflake, which is the whole point of the glyph.
+- **The brand mark is the one abstract shape** (`BrandMark`, and the same mark in
+  `public/icons/app-icon.svg`): the pelvic floor as a supporting arc with a lift
+  arrow through it. A logo may need explaining once; a tile icon may not. It is
+  tested at 16 px, because it is also the favicon.
+- PNG icon sizes (192, 512, maskable 512, apple-touch 180) are generated from
+  `app-icon.svg` by `scripts/make_icons.py`, never hand-edited.
+- Icons are used **redundantly with colour and text**: the History feed prints the
+  kind glyph next to the entry, so the feed is readable without relying on the
+  hue alone.
 
 ## Motion
 

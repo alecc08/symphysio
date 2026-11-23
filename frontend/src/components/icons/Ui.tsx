@@ -136,6 +136,24 @@ export function LogoutIcon({ className = "w-5 h-5" }: IconProps) {
   );
 }
 
+/* Reorder chevrons: real glyphs, not ▲/▼ text, so they scale and inherit colour
+   like the rest of the set. */
+export function ChevronUpIcon({ className = "w-4 h-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...base} strokeWidth={2.4} className={className}>
+      <path d="M5 15l7-7 7 7" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon({ className = "w-4 h-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...base} strokeWidth={2.4} className={className}>
+      <path d="M5 9l7 7 7-7" />
+    </svg>
+  );
+}
+
 export function SparkIcon({ className = "w-5 h-5" }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...base} className={className}>

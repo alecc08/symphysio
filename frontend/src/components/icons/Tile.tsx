@@ -29,13 +29,14 @@ const detail = { strokeWidth: 1.3, opacity: 0.55 } as const;
 
 /* --------------------------------------------------------------- brand mark */
 
-/** Product mark: the pelvic hammock supporting a load, with a lift chevron. */
+/** Product mark: the pelvic floor as a supporting arc, lifted. One white stroke
+ *  version also lives in public/icons/app-icon.svg; it has to survive 16 px. */
 export function BrandMark({ className = "w-5 h-5" }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" {...base} className={className}>
-      <path {...base} {...soft} d="M5 8.5v2.2c0 4 3 6.8 7 6.8s7-2.8 7-6.8V8.5" />
-      <circle {...base} {...solid} cx="12" cy="11.8" r="1.8" />
-      <path {...base} d="M9 21l3-3 3 3" />
+    <svg viewBox="0 0 24 24" {...base} strokeWidth={2.1} className={className}>
+      <path {...base} {...soft} d="M4 10.5c0 5.6 3.6 9.5 8 9.5s8-3.9 8-9.5" />
+      <path {...base} strokeWidth={2.2} d="M12 15V4" />
+      <path {...base} strokeWidth={2.2} d="M8.4 7.6 12 4l3.6 3.6" />
     </svg>
   );
 }
@@ -83,48 +84,63 @@ export function ReliefHero({ className = "w-12 h-12" }: IconProps) {
   );
 }
 
-/** Triggers: activity — a left and a right footprint landing on the pelvic floor. */
+/** Triggers: activity — a left and a right footprint, walking. The toe dots are
+ *  what make a blob read as a foot, so they are not optional. */
 export function TriggerHero({ className = "w-12 h-12" }: IconProps) {
   return (
-    <svg viewBox="0 0 48 48" {...base} strokeWidth={1.8} className={className}>
+    <svg viewBox="0 0 48 48" {...base} strokeWidth={1.7} className={className}>
       <path
         {...base}
-        strokeWidth={1.8}
+        strokeWidth={1.7}
         fill="currentColor"
         fillOpacity={0.2}
-        d="M15 5c3 0 4.9 2.5 4.9 6.2 0 3.2-.8 4.9-2.1 7-1.1 1.6-1.5 2.8-1.7 4.7-.2 1.7-1.1 2.6-2.6 2.6-1.9 0-3-1.2-3-3.2 0-2.1.4-3.6 1.3-5.7.6-1.7.8-3.2.8-5.3C12.6 6.6 13.3 5 15 5z"
+        d="M13.2 9.4c2.5 0 4.1 1.9 4.1 4.7 0 2.3-.7 3.6-1.7 5.3-.9 1.4-1.2 2.4-1.4 3.8-.2 1.5-1 2.3-2.2 2.3-1.6 0-2.5-1-2.5-2.6 0-1.7.4-2.8 1.1-4.5.5-1.4.7-2.5.7-4.2 0-2.6.7-4.8 1.9-4.8z"
       />
+      <circle {...base} {...solid} cx="17.6" cy="8.2" r="1.5" />
+      <circle {...base} {...solid} cx="14.4" cy="6.9" r="1.2" opacity={0.8} />
+      <circle {...base} {...solid} cx="11.4" cy="7.4" r="1.05" opacity={0.7} />
+      <circle {...base} {...solid} cx="9" cy="8.9" r="0.9" opacity={0.6} />
       <path
         {...base}
-        strokeWidth={1.8}
+        strokeWidth={1.7}
         fill="currentColor"
         fillOpacity={0.2}
-        d="M33 15c-3 0-4.9 2.5-4.9 6.2 0 3.2.8 4.9 2.1 7 1.1 1.6 1.5 2.8 1.7 4.7.2 1.7 1.1 2.6 2.6 2.6 1.9 0 3-1.2 3-3.2 0-2.1-.4-3.6-1.3-5.7-.6-1.7-.8-3.2-.8-5.3C35.4 16.6 34.7 15 33 15z"
+        d="M34.8 21.6c-2.5 0-4.1 1.9-4.1 4.7 0 2.3.7 3.6 1.7 5.3.9 1.4 1.2 2.4 1.4 3.8.2 1.5 1 2.3 2.2 2.3 1.6 0 2.5-1 2.5-2.6 0-1.7-.4-2.8-1.1-4.5-.5-1.4-.7-2.5-.7-4.2 0-2.6-.7-4.8-1.9-4.8z"
       />
-      <circle {...base} {...solid} cx="18.6" cy="4.4" r="1.5" opacity={0.55} />
-      <circle {...base} {...solid} cx="29.4" cy="14.4" r="1.5" opacity={0.55} />
-      <path {...base} strokeWidth={2} {...soft} d="M7 38.5c0 4 7 6.5 17 6.5s17-2.5 17-6.5" />
-      <path {...base} {...detail} d="M9 33.5h5M34 33.5h5" />
+      <circle {...base} {...solid} cx="30.4" cy="20.4" r="1.5" />
+      <circle {...base} {...solid} cx="33.6" cy="19.1" r="1.2" opacity={0.8} />
+      <circle {...base} {...solid} cx="36.6" cy="19.6" r="1.05" opacity={0.7} />
+      <circle {...base} {...solid} cx="39" cy="21.1" r="0.9" opacity={0.6} />
     </svg>
   );
 }
 
 /* ------------------------------------------------- compact 24x24 (nav, chips) */
 
+/* The compact set is not a shrunken hero: at 24 px the small parts vanish, so
+   each glyph is re-drawn with fewer elements and heavier strokes. */
+
 export function PhysioIcon({ className = "w-5 h-5" }: IconProps) {
-  return <BrandMark className={className} />;
+  return (
+    <svg viewBox="0 0 24 24" {...base} strokeWidth={2} className={className}>
+      <rect {...base} {...soft} x="3" y="7" width="4.4" height="9" rx="1.6" />
+      <rect {...base} {...soft} x="16.6" y="7" width="4.4" height="9" rx="1.6" />
+      <path {...base} strokeWidth={2.4} d="M7.4 11.5h9.2" />
+      <path {...base} d="M12 21.5v-6M9 18l3-3 3 3" />
+    </svg>
+  );
 }
 
 export function SymptomIcon({ className = "w-5 h-5" }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...base} strokeWidth={1.9} className={className}>
-      <circle {...base} {...soft} cx="12" cy="4.5" r="2.4" />
+      <circle {...base} {...soft} cx="12" cy="4.2" r="2.5" />
       <path
         {...base}
         {...soft}
-        d="M8.7 8.4c-1.6 1.1-2.4 2.8-2.4 4.7 0 1.6.5 2.8 1.2 3.6-.8 2.1-.4 4.1 1 5.7 1.4 1.7 6.8 1.7 8.8 0 1.2-1.6 1.8-3.6 1-5.7.7-.8 1.2-2 1.2-3.6 0-1.9-.8-3.6-2.4-4.7z"
+        d="M8.6 7.9c-1.6 1.1-2.4 2.8-2.4 4.7 0 1.6.5 2.8 1.2 3.6-.8 2.1-.4 4.1 1 5.7 1.4 1.7 6.2 1.7 8.4 0 1.3-1.6 1.8-3.6 1-5.7.7-.8 1.2-2 1.2-3.6 0-1.9-.8-3.6-2.4-4.7z"
       />
-      <path {...base} {...solid} d="M12.6 9.4 8.4 15.7h2.7l-1 5.3 4.9-6.6h-2.6z" />
+      <path {...base} {...solid} d="M12.8 8.6 8.2 15.9h3l-1.1 5.5 5.4-7.1h-2.9z" />
     </svg>
   );
 }
@@ -132,10 +148,11 @@ export function SymptomIcon({ className = "w-5 h-5" }: IconProps) {
 export function ReliefIcon({ className = "w-5 h-5" }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...base} strokeWidth={1.9} className={className}>
-      <path {...base} {...soft} d="M8.5 4a3.2 3.2 0 0 1 6.4 0v11.4a5 5 0 1 1-6.4 0z" />
-      <path {...base} strokeWidth={2} d="M11.7 8v8" />
-      <circle {...base} {...solid} cx="11.7" cy="18.6" r="2.4" />
-      <path {...base} {...detail} d="M17 8h3.5M17 12h3.5" />
+      <path {...base} {...soft} d="M8.5 3.6a3.3 3.3 0 0 1 6.6 0v11.2a5.1 5.1 0 1 1-6.6 0z" />
+      <path {...base} strokeWidth={2.1} d="M11.8 7.4v8.2" />
+      <circle {...base} {...solid} cx="11.8" cy="18.2" r="2.5" />
+      <path {...base} {...detail} d="M17.2 7.6H21M17.2 11.6H21" />
+      <path {...base} strokeWidth={1.6} d="M17.6 19.6h4.4M19.8 17.4v4.4" />
     </svg>
   );
 }
@@ -148,16 +165,12 @@ export function TriggerIcon({ className = "w-5 h-5" }: IconProps) {
         strokeWidth={1.7}
         fill="currentColor"
         fillOpacity={0.2}
-        d="M7.6 3c1.9 0 3.1 1.6 3.1 4 0 2-.5 3.1-1.3 4.4-.7 1-1 1.8-1.1 3-.1 1.1-.7 1.7-1.6 1.7-1.2 0-1.9-.8-1.9-2 0-1.4.3-2.3.8-3.7.4-1.1.5-2 .5-3.4 0-2.3.4-4 1.5-4z"
+        d="M9.6 6.4c3 0 5 2.4 5 5.9 0 2.9-.8 4.5-2 6.4-1 1.6-1.4 2.8-1.7 4.5-.2 1.7-1.1 2.6-2.5 2.6-1.9 0-3-1.3-3-3.3 0-2.1.5-3.5 1.3-5.5.6-1.6.9-3 .9-5.1 0-3.2.8-5.5 2-5.5z"
       />
-      <path
-        {...base}
-        strokeWidth={1.7}
-        fill="currentColor"
-        fillOpacity={0.2}
-        d="M16.4 8.6c-1.9 0-3.1 1.6-3.1 4 0 2 .5 3.1 1.3 4.4.7 1 1 1.8 1.1 3 .1 1.1.7 1.7 1.6 1.7 1.2 0 1.9-.8 1.9-2 0-1.4-.3-2.3-.8-3.7-.4-1.1-.5-2-.5-3.4 0-2.3-.4-4-1.5-4z"
-      />
-      <path {...base} strokeWidth={1.9} {...soft} d="M3.5 20c0 2 3.8 3.2 8.5 3.2s8.5-1.2 8.5-3.2" />
+      <circle {...base} {...solid} cx="15.2" cy="5.2" r="1.7" />
+      <circle {...base} {...solid} cx="11.7" cy="3.9" r="1.35" opacity={0.85} />
+      <circle {...base} {...solid} cx="8.3" cy="4.5" r="1.15" opacity={0.7} />
+      <path {...base} strokeWidth={1.9} opacity={0.75} d="M18.6 7.6 21 5.2M19.6 11.4h2.8M18.9 15.2l2.1 2.1" />
     </svg>
   );
 }

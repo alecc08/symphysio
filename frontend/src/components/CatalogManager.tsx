@@ -12,7 +12,7 @@ import type {
 import { presetBody, type PresetInput } from "../lib/presets";
 import { useCatalog } from "../state/catalog";
 import { useToast } from "../state/toast";
-import { PlusIcon } from "./icons/Ui";
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon } from "./icons/Ui";
 
 type Definition = ExerciseDefinition | SymptomDefinition | ContextDefinition;
 
@@ -89,24 +89,24 @@ export function CatalogManager({ kinds }: { kinds: CatalogKind[] }) {
           <ul className="mt-3 space-y-2">
             {rowsFor(kind).map((item, index) => (
               <li key={item.id} className="flex items-center gap-2">
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-1">
                   <button
                     type="button"
                     onClick={() => void move(kind, index, -1)}
                     disabled={index === 0}
                     aria-label={`Move ${item.name} up`}
-                    className="px-1 text-[0.6rem] leading-none text-muted disabled:opacity-25"
+                    className="grid h-6 w-6 place-items-center rounded-md border border-line bg-card text-muted transition-colors hover:text-ink disabled:opacity-25"
                   >
-                    ▲
+                    <ChevronUpIcon className="h-3.5 w-3.5" />
                   </button>
                   <button
                     type="button"
                     onClick={() => void move(kind, index, 1)}
                     disabled={index === rowsFor(kind).length - 1}
                     aria-label={`Move ${item.name} down`}
-                    className="px-1 text-[0.6rem] leading-none text-muted disabled:opacity-25"
+                    className="grid h-6 w-6 place-items-center rounded-md border border-line bg-card text-muted transition-colors hover:text-ink disabled:opacity-25"
                   >
-                    ▼
+                    <ChevronDownIcon className="h-3.5 w-3.5" />
                   </button>
                 </div>
                 <input

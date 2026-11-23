@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import { ApiError } from "../api/client";
-import { PhysioHero } from "../components/icons/Tile";
+import { BrandMark } from "../components/icons/Tile";
 import { useSession } from "../state/session";
 
 const MIN_PASSWORD = 12;
@@ -36,7 +36,7 @@ export function AuthPage() {
     <div className="app-shell mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 pb-10">
       <div className="mb-6 flex items-center gap-3">
         <span className="text-physio-ink">
-          <PhysioHero className="h-10 w-10" />
+          <BrandMark className="h-10 w-10" />
         </span>
         <div>
           <p className="text-xl font-extrabold tracking-tight">Symphysio</p>
