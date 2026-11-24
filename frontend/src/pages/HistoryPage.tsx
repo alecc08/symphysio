@@ -116,7 +116,9 @@ export function HistoryPage() {
   return (
     <div className="px-4 pb-24 pt-2">
       <h1 className="text-2xl font-extrabold tracking-tight">History</h1>
-      <div className="mt-3 flex gap-2 overflow-x-auto">
+      {/* Wraps rather than scrolls: four filter chips that need a swipe to see are
+          worse than two rows, and a clipped chip is not a choice. */}
+      <div className="mt-3 flex flex-wrap gap-2">
         {FILTERS.map((entry) => (
           <button
             key={entry.id}
