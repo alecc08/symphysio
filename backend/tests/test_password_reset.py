@@ -24,11 +24,11 @@ NEW_PASSWORD = "cardinal-window-71"
 WEAK = "short"  # below the length policy; not a secret anyone uses
 
 MAIL_ENV = {
-    "SYPHYSIO_MAIL_BACKEND": "outbox",
+    "SYMPHYSIO_MAIL_BACKEND": "outbox",
     "RESEND_API_KEY": "re_never_used_in_tests",
-    "SYPHYSIO_EMAIL_FROM": "Symphysio <confirm@example.org>",
-    "SYPHYSIO_PUBLIC_URL": PUBLIC_URL,
-    "SYPHYSIO_EMAIL_CONFIRMATION": "off",
+    "SYMPHYSIO_EMAIL_FROM": "Symphysio <confirm@example.org>",
+    "SYMPHYSIO_PUBLIC_URL": PUBLIC_URL,
+    "SYMPHYSIO_EMAIL_CONFIRMATION": "off",
 }
 
 
@@ -116,7 +116,7 @@ def test_the_send_budget_is_per_account_and_still_answers_202(
     mail_client: TestClient,
 ) -> None:
     register(mail_client)
-    for _ in range(3):  # SYPHYSIO_EMAIL_SENDS_PER_HOUR default
+    for _ in range(3):  # SYMPHYSIO_EMAIL_SENDS_PER_HOUR default
         assert request_reset(mail_client) == 202
     assert len(outbox(mail_client)) == 3
     assert request_reset(mail_client) == 202
@@ -163,7 +163,7 @@ def test_a_reset_link_works_once(mail_client: TestClient) -> None:
 def short_ttl_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     # A dict rather than a keyword argument: ruff reads a literal kwarg whose name
     # contains "password" as a hardcoded secret, and this one is a TTL.
-    short_ttl = {"SYPHYSIO_PASSWORD_RESET_TTL_SECONDS": "300"}
+    short_ttl = {"SYMPHYSIO_PASSWORD_RESET_TTL_SECONDS": "300"}
     configure(tmp_path, monkeypatch, **{**MAIL_ENV, **short_ttl})
     with TestClient(create_app()) as client:
         yield client
@@ -208,8 +208,8 @@ def test_purposes_are_not_interchangeable(
 ) -> None:
     """A confirmation token must not reset a password, and a reset link must not
     confirm an address: same table, same shape, different meaning."""
-    mail_env = {k: v for k, v in MAIL_ENV.items() if k != "SYPHYSIO_EMAIL_CONFIRMATION"}
-    configure(tmp_path, monkeypatch, SYPHYSIO_EMAIL_CONFIRMATION="optional", **mail_env)
+    mail_env = {k: v for k, v in MAIL_ENV.items() if k != "SYMPHYSIO_EMAIL_CONFIRMATION"}
+    configure(tmp_path, monkeypatch, SYMPHYSIO_EMAIL_CONFIRMATION="optional", **mail_env)
     with TestClient(create_app()) as client:
         register(client)
         confirm_token = _fragment_token(outbox(client)[0], "/verify")
@@ -233,3 +233,38 @@ def _fragment_token(message: Message, path: str) -> str:
     match = re.search(rf"{path}#token=([A-Za-z0-9_-]{{20,}})", message.text)
     assert match, message.text
     return match.group(1)
+
+
+def test_both_emailed_links_have_a_page_to_land_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/reset` and `/verify` are SPA routes the server has to know by name.
+
+    The SPA has no router, so nothing catches an unknown path: until this was
+    written, `/reset` fell through to FastAPI's generic 404 and every password
+    reset mail on a real install sent its reader to `{"detail": "Not Found"}` —
+    while the API tests stayed green, because they post the token and never
+    follow their own link.
+    """
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>shell</title>", encoding="utf-8")
+    configure(tmp_path, monkeypatch, SYMPHYSIO_STATIC_DIR=str(dist), **MAIL_ENV)
+    with TestClient(create_app()) as client:
+        for path in ("/verify", "/reset"):
+            page = client.get(path)
+            assert page.status_code == 200, path
+            assert page.headers["content-type"].startswith("text/html"), path
+
+
+def test_without_a_bundle_the_two_links_say_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A backend-only install still explains itself instead of answering 404."""
+    configure(tmp_path, monkeypatch, **MAIL_ENV)
+    with TestClient(create_app()) as client:
+        for path in ("/verify", "/reset"):
+            page = client.get(path)
+            assert page.status_code == 404, path
+            assert "frontend" in page.json()["detail"], page.json()
+        assert client.get("/no-such-page").json()["detail"] == "Not Found"

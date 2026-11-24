@@ -25,7 +25,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..db import Database
-from ..deps import AuthedUser, get_db
+from ..deps import AuthedUser, LocaleDep, get_db
+from ..i18n import t
 from ..ids import new_id, now_utc
 from ..schemas import PlanEventCreate, PlanEventUpdate
 from .logs import FUTURE_SKEW_SECONDS
@@ -98,11 +99,11 @@ async def create_plan_event(
 
 @router.patch("/plan-events/{event_id}")
 async def patch_plan_event(
-    event_id: str, payload: PlanEventUpdate, user: AuthedUser, db: DbDep
+    event_id: str, payload: PlanEventUpdate, user: AuthedUser, db: DbDep, locale: LocaleDep
 ) -> dict[str, Any]:
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
-        raise HTTPException(status_code=422, detail="Nothing to change")
+        raise HTTPException(status_code=422, detail=t("err.nothing_to_change", locale))
     if updates.get("text") is not None:
         updates["text"] = str(updates["text"]).strip()
     changed = await db.execute(
@@ -112,15 +113,21 @@ async def patch_plan_event(
         [*updates.values(), event_id, user["id"]],
     )
     if not changed:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan event not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=t("err.plan_not_found", locale)
+        )
     row = await db.row(PLAN_BY_ID, (event_id, user["id"]))
     return dict(row or {})
 
 
 @router.delete("/plan-events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_plan_event(event_id: str, user: AuthedUser, db: DbDep) -> None:
+async def delete_plan_event(
+    event_id: str, user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> None:
     deleted = await db.execute(
         "DELETE FROM plan_events WHERE id = ? AND user_id = ?", (event_id, user["id"])
     )
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan event not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=t("err.plan_not_found", locale)
+        )

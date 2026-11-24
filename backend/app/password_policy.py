@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from .i18n import DEFAULT_LOCALE, t
+
 MIN_LENGTH = 12
 MAX_LENGTH = 128
 
@@ -37,27 +39,34 @@ _REPEAT_RUN = re.compile(r"(.)\1{5,}")
 _KEYBOARD_RUN = re.compile(r"(?i)(qwert|asdfg|zxcvb|123456|654321)")
 
 
-def check_password(email: str, password: str) -> list[str]:
-    """Return human-readable problems; an empty list means the password is OK."""
+def check_password(email: str, password: str, locale: str = DEFAULT_LOCALE) -> list[str]:
+    """Return human-readable problems; an empty list means the password is OK.
+
+    The rules are one language and the sentences another: the checks below are
+    unchanged in every case, only the wording follows the account's locale, so a
+    French account is not asked to decode an English reason for a rejected
+    password. English is the default, which is what every caller predating the
+    preference passes.
+    """
     problems: list[str] = []
     lowered = password.lower()
     if len(password) < MIN_LENGTH:
-        problems.append(f"Password must be at least {MIN_LENGTH} characters.")
+        problems.append(t("pw.too_short", locale, limit=MIN_LENGTH))
     if len(password) > MAX_LENGTH:
-        problems.append(f"Password must be at most {MAX_LENGTH} characters.")
+        problems.append(t("pw.too_long", locale, limit=MAX_LENGTH))
     if password != password.strip():
-        problems.append("Password must not start or end with whitespace.")
+        problems.append(t("pw.whitespace", locale))
     if lowered in _COMMON:
-        problems.append("That is one of the most common passwords. Pick another.")
+        problems.append(t("pw.common", locale))
     if email:
         local = email.split("@", 1)[0].lower()
         if local and (local in lowered or lowered in local):
-            problems.append("Password must not contain your email address.")
+            problems.append(t("pw.in_email", locale))
         domain = email.split("@", 1)[-1].split(".", 1)[0].lower()
         if len(domain) >= 4 and domain in lowered:
-            problems.append("Password must not contain your email domain.")
+            problems.append(t("pw.in_domain", locale))
     if _REPEAT_RUN.search(password) or _KEYBOARD_RUN.search(password):
-        problems.append("Password is too repetitive or keyboard-sequential.")
+        problems.append(t("pw.repetitive", locale))
     if len(set(password)) <= 3:
-        problems.append("Password uses too few distinct characters.")
+        problems.append(t("pw.few_distinct", locale))
     return problems

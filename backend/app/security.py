@@ -18,6 +18,7 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from fastapi import Response
 
 from .db import Database
+from .i18n import DEFAULT_LOCALE
 from .ids import new_id, now_utc
 from .settings import Settings
 
@@ -86,7 +87,8 @@ async def authenticate(db: Database, settings: Settings, token: str | None) -> A
         return None
     digest = token_digest(token)
     row = await db.row(
-        "SELECT s.expires_at_utc, u.id, u.email, u.created_at_utc, u.is_verified, u.profile_key"
+        "SELECT s.expires_at_utc, u.id, u.email, u.created_at_utc, u.is_verified, u.profile_key,"
+        " u.locale, u.timezone"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ? AND s.expires_at_utc > ?",
         (digest, now_utc()),
@@ -112,6 +114,11 @@ async def authenticate(db: Database, settings: Settings, token: str | None) -> A
         # touches users) and it is what makes the insights copy say "your
         # postnatal set" instead of guessing from row counts.
         "profile_key": str(row["profile_key"]),
+        # Carried for the same reason: every response that says something in
+        # words, and every local-day bucket, needs the account's own answers
+        # rather than a guess from headers or from the newest row's offset.
+        "locale": str(row["locale"]),
+        "timezone": row["timezone"],
     }
     return Authenticated(user=user, token=token, expires_at_utc=expires_at, renewed=renewed)
 
@@ -181,6 +188,10 @@ def user_public(user: dict[str, Any]) -> dict[str, Any]:
         "email": user["email"],
         "created_at_utc": user["created_at_utc"],
         "is_verified": bool(user.get("is_verified", True)),
+        # Same two answers as everywhere else: a payload that describes the
+        # account should not describe it in one language and omit the other.
+        "locale": user.get("locale", DEFAULT_LOCALE),
+        "timezone": user.get("timezone"),
     }
 
 

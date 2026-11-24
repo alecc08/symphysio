@@ -29,13 +29,13 @@ def configure(
     whole environment.
     """
     defaults = {
-        "SYPHYSIO_DATA_DIR": str(tmp_path),
-        "SYPHYSIO_DB_PATH": str(tmp_path / db),
-        "SYPHYSIO_MIGRATIONS_DIR": str(MIGRATIONS),
-        "SYPHYSIO_STATIC_DIR": str(tmp_path / "no-dist"),
-        "SYPHYSIO_COOKIE_SECURE": "0",
-        "SYPHYSIO_RATE_LIMIT_ATTEMPTS": "4",
-        "SYPHYSIO_RATE_LIMIT_WINDOW": "60",
+        "SYMPHYSIO_DATA_DIR": str(tmp_path),
+        "SYMPHYSIO_DB_PATH": str(tmp_path / db),
+        "SYMPHYSIO_MIGRATIONS_DIR": str(MIGRATIONS),
+        "SYMPHYSIO_STATIC_DIR": str(tmp_path / "no-dist"),
+        "SYMPHYSIO_COOKIE_SECURE": "0",
+        "SYMPHYSIO_RATE_LIMIT_ATTEMPTS": "4",
+        "SYMPHYSIO_RATE_LIMIT_WINDOW": "60",
     }
     for key, value in {**defaults, **env}.items():
         monkeypatch.setenv(key, value)
@@ -61,8 +61,22 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
     return {"X-CSRF-Token": token}
 
 
-def register(client: TestClient, email: str = EMAIL, password: str = PASSWORD) -> dict:
-    response = client.post("/api/v1/auth/register", json={"email": email, "password": password})
+def register(
+    client: TestClient,
+    email: str = EMAIL,
+    password: str = PASSWORD,
+    locale: str | None = None,
+    timezone: str | None = None,
+) -> dict:
+    """Create an account. `locale`/`timezone` are the sign-up choices; `locale` also
+    sets `Accept-Language`, which is what an unauthenticated request is judged by."""
+    body: dict[str, object] = {"email": email, "password": password}
+    if locale is not None:
+        body["locale"] = locale
+    if timezone is not None:
+        body["timezone"] = timezone
+    headers = {"Accept-Language": locale} if locale else {}
+    response = client.post("/api/v1/auth/register", json=body, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
 

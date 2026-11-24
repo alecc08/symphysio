@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import Database
+from .i18n import negotiate, t
 from .mailer import build_mailer
 from .ratelimit import RateLimiter
 from .routers import analytics, auth, catalog, export, logs, plan
@@ -96,16 +97,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.require_email_verification and not settings.email_enabled:
         # A gate nobody can pass is a bug, not a policy: refuse the combination.
         raise RuntimeError(
-            "SYPHYSIO_EMAIL_CONFIRMATION=required but no mail transport is configured; "
-            "set RESEND_API_KEY, SYPHYSIO_EMAIL_FROM and SYPHYSIO_PUBLIC_URL, or use "
-            "SYPHYSIO_EMAIL_CONFIRMATION=optional (or off)."
+            "SYMPHYSIO_EMAIL_CONFIRMATION=required but no mail transport is configured; "
+            "set RESEND_API_KEY, SYMPHYSIO_EMAIL_FROM and SYMPHYSIO_PUBLIC_URL, or use "
+            "SYMPHYSIO_EMAIL_CONFIRMATION=optional (or off)."
         )
     logger.info(
-        "symphysio ready (db=%s, email=%s, confirmation=%s%s)",
+        "symphysio ready (db=%s, email=%s, confirmation=%s%s, tz=%s, locales=%s)",
         settings.database_path,
         settings.mail_backend,
         settings.email_confirmation,
         "" if not settings.email_enabled else f", from={settings.email_from}",
+        # Printed because both are invisible defaults that bite: an account with
+        # no zone of its own gets this one, and an unset SYMPHYSIO_DEFAULT_TIMEZONE
+        # means UTC no matter where the server physically is.
+        settings.default_timezone,
+        "en,fr",
     )
     try:
         yield
@@ -155,7 +161,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ):
             # Double-submit: the header must match the readable CSRF cookie.
             return JSONResponse(
-                {"detail": "CSRF token missing or invalid."},
+                {"detail": t("err.csrf", negotiate(request.headers.get("accept-language")))},
                 status_code=status.HTTP_403_FORBIDDEN,
             )
         response = await call_next(request)
@@ -179,7 +185,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = getattr(app.state, "settings", get_settings()).max_body_bytes
         declared = request.headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > limit:
-            return JSONResponse({"detail": "Request body too large"}, status_code=413)
+            return JSONResponse(
+                {
+                    "detail": t(
+                        "err.body_too_large", negotiate(request.headers.get("accept-language"))
+                    )
+                },
+                status_code=413,
+            )
         return await call_next(request)
 
     @app.middleware("http")
@@ -212,23 +225,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "app": "symphysio",
                     "version": __version__,
                     "message": "API is running. Build the frontend (npm run build) "
-                    "or set SYPHYSIO_STATIC_DIR to the compiled bundle.",
+                    "or set SYMPHYSIO_STATIC_DIR to the compiled bundle.",
                     "openapi": f"{API_PREFIX}/openapi.json",
                 }
             )
         return FileResponse(index_html, media_type="text/html")
 
-    # The confirmation link in the email points here; the SPA reads ?token= and
-    # posts it to /api/v1/auth/verify, then rewrites the URL.
-    @app.get("/verify", include_in_schema=False)
-    async def verify_shell() -> Response:
-        index_html = spa_index()
-        if index_html is None:
-            return JSONResponse(
-                {"detail": "Build the frontend to use the confirmation page."},
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-        return FileResponse(index_html, media_type="text/html")
+    # The two links the emails point at. Both are SPA routes with no router of
+    # their own, so the server has to hand over the shell by name — and a link
+    # nobody serves is a link that 404s in production while every test stays
+    # green: `/reset` was missing from this list for a whole release, which is how
+    # a password-reset mail sent people to `{"detail": "Not Found"}`.
+    def serve_shell(page: str):
+        async def endpoint() -> Response:
+            index_html = spa_index()
+            if index_html is None:
+                return JSONResponse(
+                    {"detail": f"Build the frontend to use the {page} page."},
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+            return FileResponse(index_html, media_type="text/html")
+
+        return endpoint
+
+    for path, page in (("/verify", "confirmation"), ("/reset", "password reset")):
+        app.get(path, include_in_schema=False)(serve_shell(page))
 
     app_settings = getattr(app.state, "settings", get_settings())
     static_dir = Path(app_settings.static_dir)

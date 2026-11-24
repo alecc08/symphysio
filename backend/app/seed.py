@@ -12,10 +12,13 @@ reordered or removed in Settings, and new ones can be typed in.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from .db import Database
+from .i18n import DEFAULT_LOCALE
 from .ids import new_id
+from .presets_fr import name_for
 from .profiles import DEFAULT_PROFILE, POSTNATAL_PELVIC, PROFILES
 
 # Re-exported from the postnatal profile so the rest of this module (and the
@@ -79,22 +82,34 @@ SUGGESTED_CONTEXTS: tuple[tuple[str, str], ...] = (
 )
 
 
-async def seed_catalog(db: Database, user_id: str, profile_key: str = DEFAULT_PROFILE) -> int:
+async def seed_catalog(
+    db: Database,
+    user_id: str,
+    profile_key: str = DEFAULT_PROFILE,
+    locale: str = DEFAULT_LOCALE,
+) -> int:
     """Write the chosen profile's presets as ordinary definition rows.
 
     Returns how many rows were created, which is 0 for `none` — a valid choice,
     not an error. Every row records the profile that seeded it, so Settings can
     later say "restore my set" without guessing.
+
+    `locale` decides the *spelling written into the rows*, because a name is data
+    once it exists: the person can rename it, the diary quotes it, and the CSV a
+    physiotherapist opens prints it. A French account is therefore seeded in
+    French, and a later language switch deliberately leaves those rows alone —
+    re-translating someone's history would be the worst kind of quiet edit.
     """
     profile = PROFILES.get(profile_key) or PROFILES[DEFAULT_PROFILE]
+    localized = partial(name_for, locale=locale)
     await db.executemany(
         "INSERT INTO exercise_definitions"
         " (id, user_id, name, body_region, default_sets, default_reps, default_sec, sort_order,"
         "  profile_key)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            (new_id(), user_id, name, region, sets, reps, sec, index, profile.key)
-            for index, (name, region, sets, reps, sec) in enumerate(profile.exercises)
+            (new_id(), user_id, localized(text), region, sets, reps, sec, index, profile.key)
+            for index, (text, region, sets, reps, sec) in enumerate(profile.exercises)
         ],
     )
     await db.executemany(
@@ -102,49 +117,55 @@ async def seed_catalog(db: Database, user_id: str, profile_key: str = DEFAULT_PR
         " profile_key)"
         " VALUES (?, ?, ?, ?, ?, ?)",
         [
-            (new_id(), user_id, name, region, index, profile.key)
-            for index, (name, region) in enumerate(profile.symptoms)
+            (new_id(), user_id, localized(text), region, index, profile.key)
+            for index, (text, region) in enumerate(profile.symptoms)
         ],
     )
     await db.executemany(
         "INSERT INTO context_definitions (id, user_id, category, name, sort_order, profile_key)"
         " VALUES (?, ?, ?, ?, ?, ?)",
         [
-            (new_id(), user_id, category, name, index, profile.key)
-            for index, (category, name) in enumerate(profile.contexts)
+            (new_id(), user_id, category, localized(text), index, profile.key)
+            for index, (category, text) in enumerate(profile.contexts)
         ],
     )
     return len(profile.exercises) + len(profile.symptoms) + len(profile.contexts)
 
 
-def suggestions(kind: str, existing_names: set[str]) -> list[dict[str, Any]]:
+def suggestions(
+    kind: str, existing_names: set[str], locale: str = DEFAULT_LOCALE
+) -> list[dict[str, Any]]:
     """Preset ideas the user does not already have (case-insensitive match).
 
     Each row is shaped exactly like that kind's create model, so the client can
     POST it back unchanged — the models are `extra="forbid"`, so mixing fields
     between kinds would be rejected.
+
+    The names are offered in the account's language, which is also what makes the
+    filter work for a French account: its existing rows are French, so a French
+    suggestion it already has is dropped by the same casefold comparison.
     """
     taken = {name.casefold() for name in existing_names}
     if kind == "exercises":
         return [
             {
-                "name": name,
+                "name": name_for(name, locale),
                 "body_region": region,
                 "default_sets": sets,
                 "default_reps": reps,
                 "default_sec": sec,
             }
             for name, region, sets, reps, sec in SUGGESTED_EXERCISES
-            if name.casefold() not in taken
+            if name.casefold() not in taken and name_for(name, locale).casefold() not in taken
         ]
     if kind == "symptoms":
         return [
-            {"name": name, "default_region": region}
+            {"name": name_for(name, locale), "default_region": region}
             for name, region in SUGGESTED_SYMPTOMS
-            if name.casefold() not in taken
+            if name.casefold() not in taken and name_for(name, locale).casefold() not in taken
         ]
     return [
-        {"name": name, "category": category}
+        {"name": name_for(name, locale), "category": category}
         for category, name in SUGGESTED_CONTEXTS
-        if name.casefold() not in taken
+        if name.casefold() not in taken and name_for(name, locale).casefold() not in taken
     ]

@@ -174,7 +174,7 @@ def build_mailer(settings: Settings) -> Mailer:
         return OutboxMailer(directory=settings.data_dir / "outbox")
     if settings.mail_backend == "resend":
         if not settings.email_enabled:
-            logger.warning("SYPHYSIO_MAIL_BACKEND=resend but email is unconfigured; using null")
+            logger.warning("SYMPHYSIO_MAIL_BACKEND=resend but email is unconfigured; using null")
             return NullMailer()
         return ResendMailer(settings)
     return NullMailer()

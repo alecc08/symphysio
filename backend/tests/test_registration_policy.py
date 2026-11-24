@@ -18,7 +18,7 @@ from .conftest import EMAIL, PASSWORD, configure
 
 @pytest.fixture()
 def closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    configure(tmp_path, monkeypatch, "closed.sqlite", SYPHYSIO_ALLOW_REGISTRATION="0")
+    configure(tmp_path, monkeypatch, "closed.sqlite", SYMPHYSIO_ALLOW_REGISTRATION="0")
     with TestClient(create_app()) as client:
         yield client
 

@@ -14,7 +14,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Response
 
 from ..db import Database
-from ..deps import AuthedUser, get_db
+from ..deps import AuthedUser, LocaleDep, get_db
+from ..i18n import t_or
 from ..ids import now_utc
 from .logs import TIMELINE_SELECT
 
@@ -177,18 +178,40 @@ def _plan_csv_row(row: dict[str, Any]) -> list[str]:
     ]
 
 
+def _header(locale: str) -> list[str]:
+    """The column names, in the language of the account that asked.
+
+    Only the header is translated. The *values* — `exercise`, `pelvic_floor`,
+    `relief`, `1`/`0` — stay the machine-readable vocabulary docs/API.md documents,
+    because a script or a spreadsheet formula that keys off `event_type == "exercise"`
+    must keep working whichever language the button was in. The one column that is
+    already in the person's language is `definition`: those are their own rows.
+
+    A column with no translation entry prints its own name rather than an empty
+    cell, so adding a column without a translation costs nothing here and a test
+    in tests/test_i18n.py is what actually fails.
+    """
+    return [t_or(f"csv.{column}", locale, column) for column in CSV_COLUMNS]
+
+
 @router.get("/csv")
 async def export_csv(
     user: AuthedUser,
     db: DbDep,
+    locale: LocaleDep,
     from_: Annotated[int | None, Query(ge=0, alias="from")] = None,
     to: Annotated[int | None, Query(ge=0)] = None,
 ) -> Response:
     rows = await _rows(db, user["id"], from_, to)
     plans = await _plan_rows(db, user["id"], from_, to)
     buffer = io.StringIO()
+    # UTF-8 BOM: without it Excel reads the file as Windows-1252 and a French
+    # header row arrives as `gravitÃ©`. This file is opened in a spreadsheet, and
+    # the accents are the point. Readers that do not want a BOM skip it or ignore
+    # it; every real one handles it.
+    buffer.write("\ufeff")
     writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(CSV_COLUMNS)
+    writer.writerow(_header(locale))
     # One chronological table, not two sections: a clinician sorts it by date and
     # sees "she changed the programme" between the symptom rows that stepped.
     merged = [{**row, "event_type": "plan"} for row in plans] + list(rows)
@@ -248,6 +271,11 @@ async def export_json(
             "id": user_id,
             "email": user["email"],
             "profile_key": user.get("profile_key"),
+            # The two preferences, so a file analysed years later says what
+            # language its `definition` names were written in and what "local"
+            # meant to the person logging it.
+            "locale": user.get("locale"),
+            "timezone": user.get("timezone"),
         },
         "definitions": definitions,
         "logs": logs,

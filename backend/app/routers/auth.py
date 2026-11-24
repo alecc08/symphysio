@@ -8,7 +8,7 @@ fully usable and every account is treated as verified.
 from __future__ import annotations
 
 import secrets
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -17,6 +17,7 @@ from ..clientip import client_ip
 from ..db import Database
 from ..deps import AuthedUser, get_db, get_settings
 from ..emails import confirmation_message, password_reset_message
+from ..i18n import DEFAULT_LOCALE, from_headers, normalize, t
 from ..ids import new_id, now_utc
 from ..mailer import Mailer, Message
 from ..password_policy import check_password
@@ -25,6 +26,8 @@ from ..schemas import (
     LoginRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
+    PreferencesOut,
+    PreferencesUpdate,
     RegisterRequest,
     UserOut,
     VerifyRequest,
@@ -42,6 +45,7 @@ from ..security import (
 )
 from ..seed import seed_catalog
 from ..settings import Settings
+from ..timezones import effective, utc_offset_label
 from ..verification import (
     CONFIRM_EMAIL,
     PASSWORD_RESET,
@@ -80,7 +84,7 @@ def _enforce_limit(request: Request, key: str) -> None:
     if wait > 0:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many attempts. Try again later.",
+            detail=t("err.too_many_attempts", from_headers(request.headers)),
             headers=_retry_header(wait),
         )
 
@@ -139,9 +143,13 @@ async def register(
         _record_failure(request, f"register:{ip}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Registration is closed on this instance.",
+            detail=t("err.registration_closed", from_headers(request.headers)),
         )
-    problems = check_password(payload.email, payload.password)
+    # The body's choice wins; without one, the request's `Accept-Language` answers.
+    # `negotiate`, not `normalize`: this is a header list with quality values, and a
+    # browser that says `fr-CA,fr;q=0.9,en;q=0.8` is not saying the literal string.
+    locale = payload.locale or from_headers(request.headers)
+    problems = check_password(payload.email, payload.password, locale)
     if problems:
         _record_failure(request, f"register:{ip}")
         raise HTTPException(status_code=422, detail=problems[0])
@@ -151,7 +159,7 @@ async def register(
         _record_failure(request, f"register:{ip}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An account with that email already exists.",
+            detail=t("err.email_taken", locale),
         )
 
     # Nothing to confirm when the admin turned email off or no transport is
@@ -160,8 +168,9 @@ async def register(
     verified = 0 if settings.confirmation_enabled else 1
     user_id = new_id()
     await db.execute(
-        "INSERT INTO users (id, email, password_hash, created_at_utc, is_verified, profile_key)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, email, password_hash, created_at_utc, is_verified, profile_key,"
+        " locale, timezone)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             user_id,
             payload.email,
@@ -169,41 +178,47 @@ async def register(
             now_utc(),
             verified,
             payload.profile,
+            locale,
+            # Only an explicit choice is stored. A zone inferred from this one
+            # request (or from the instance default) is not something to pin to
+            # the account forever: NULL means "never chose", which is what keeps
+            # the instance default meaningful.
+            payload.timezone or None,
         ),
     )
-    await seed_catalog(db, user_id, payload.profile)
+    # Seeded in the account's language, because these become rows: a preset name
+    # is data the person can rename, not chrome the app can re-translate later.
+    await seed_catalog(db, user_id, payload.profile, locale)
 
     issued = await _issue_confirmation(db, settings, mailer, user_id, payload.email)
     if issued is not None:
         token, _ = issued
-        background.add_task(_deliver, mailer, confirmation_message(settings, payload.email, token))
+        background.add_task(
+            _deliver, mailer, confirmation_message(settings, payload.email, token, locale)
+        )
+
+    stored = await _user_row(db, user_id)
 
     # In hard mode a new account cannot use its session until the link is clicked.
     if settings.require_email_verification and settings.confirmation_enabled:
-        return AuthOut(
-            user=UserOut(
-                id=user_id,
-                email=payload.email,
-                created_at_utc=await _created_at(db, user_id),
-                is_verified=False,
-            )
-        )
+        return AuthOut(user=UserOut(**{**stored, "is_verified": False}))
 
     token, expires_at = await create_session(db, user_id, settings)
     set_session_cookies(response, settings, token, expires_at)
-    return AuthOut(
-        user=UserOut(
-            id=user_id,
-            email=payload.email,
-            created_at_utc=await _created_at(db, user_id),
-            is_verified=bool(verified),
-        )
+    return AuthOut(user=UserOut(**{**stored, "is_verified": bool(verified)}))
+
+
+async def _user_row(db: Database, user_id: str) -> dict[str, object]:
+    """The account's own public fields, for the responses that build a `UserOut`."""
+    row = await db.row(
+        "SELECT id, email, created_at_utc, is_verified, profile_key, locale, timezone"
+        " FROM users WHERE id = ?",
+        (user_id,),
     )
-
-
-async def _created_at(db: Database, user_id: str) -> int:
-    value = await db.value("SELECT created_at_utc FROM users WHERE id = ?", (user_id,))
-    return int(value) if value is not None else now_utc()
+    if row is None:  # we just wrote the row
+        return {"id": user_id, "email": "", "created_at_utc": now_utc(), "is_verified": True}
+    row["is_verified"] = bool(row["is_verified"])
+    return row
 
 
 @router.post("/login", response_model=AuthOut)
@@ -221,7 +236,8 @@ async def login(
     _enforce_limit(request, f"login-email:{payload.email}")
 
     row = await db.row(
-        "SELECT id, password_hash, created_at_utc, is_verified FROM users WHERE email = ?",
+        "SELECT id, password_hash, created_at_utc, is_verified, profile_key, locale, timezone"
+        " FROM users WHERE email = ?",
         (payload.email,),
     )
     limiter = request.app.state.rate_limiter
@@ -231,9 +247,12 @@ async def login(
         if limiter:
             limiter.record_failure(f"login-ip:{ip}")
             limiter.record_failure(f"login-email:{payload.email}")
+        # Deliberately the *request's* language, never the stored preference:
+        # answering this one in French only for accounts that happen to be French
+        # would turn a failed login into an oracle for "does this address exist".
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email or password is incorrect.",
+            detail=t("err.bad_credentials", from_headers(request.headers)),
             headers=_retry_header(0),
         )
 
@@ -247,6 +266,10 @@ async def login(
             (hash_password(payload.password), row["id"]),
         )
 
+    # From here the password matched, so the account's own language is safe to
+    # use: it is no longer an answer an attacker can probe for.
+    account_locale = normalize(row["locale"])
+
     if settings.require_email_verification and not bool(row["is_verified"]):
         # Hard mode is opt-in. Send a fresh link so the person is never stuck on
         # a 403 with no way forward, subject to the same per-hour cap.
@@ -254,13 +277,15 @@ async def login(
         if issued is not None:
             token, _ = issued
             background.add_task(
-                _deliver, mailer, confirmation_message(settings, payload.email, token)
+                _deliver,
+                mailer,
+                confirmation_message(settings, payload.email, token, account_locale),
             )
         # An HTTPException would drop the queued send, so answer with a response
         # that carries the background task.
         denial = JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            content={"detail": "Confirm your email first — we have just sent you a new link."},
+            content={"detail": t("err.confirm_first", account_locale)},
         )
         denial.background = background
         return denial
@@ -273,6 +298,9 @@ async def login(
             email=payload.email,
             created_at_utc=int(row["created_at_utc"]),
             is_verified=bool(row["is_verified"]),
+            profile_key=str(row["profile_key"]),
+            locale=account_locale,
+            timezone=row["timezone"],
         )
     )
 
@@ -312,6 +340,73 @@ async def me(user: AuthedUser) -> AuthOut:
     return AuthOut(user=UserOut(**user))
 
 
+# -- preferences ---------------------------------------------------------
+#
+# Two account-level settings that change what the *server* says and how it cuts
+# a day. They live on the account, not in the browser, for one reason each: the
+# language decides the wording of an email that is read away from this browser,
+# and the zone decides what "today" means for an insights card computed on the
+# server. Both are read by the same session lookup that already runs per request.
+
+
+def _preferences(request: Request, user: dict[str, Any], settings: Settings) -> PreferencesOut:
+    zone = effective(
+        user.get("timezone"), request.headers.get("x-timezone"), settings.default_timezone
+    )
+    return PreferencesOut(
+        locale=normalize(user.get("locale")),
+        timezone=user.get("timezone"),
+        effective_timezone=zone,
+        utc_offset=utc_offset_label(zone),
+    )
+
+
+@router.get("/preferences", response_model=PreferencesOut)
+async def get_preferences(
+    request: Request,
+    user: AuthedUser,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PreferencesOut:
+    """What the account holds, plus what the server is actually using.
+
+    The distinction matters: an account that never chose a zone displays the
+    instance default, and Settings has to say so rather than show a blank.
+    """
+    return _preferences(request, user, settings)
+
+
+@router.patch("/preferences", response_model=PreferencesOut)
+async def patch_preferences(
+    payload: PreferencesUpdate,
+    request: Request,
+    user: AuthedUser,
+    db: Annotated[Database, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PreferencesOut:
+    """Language and time zone. Neither rewrites anything already logged.
+
+    A zone sent as `null` or `""` is cleared, which puts the account back under
+    the instance default — the honest way to undo a wrong pick. The account's
+    language changes the app, the API's error text and future emails; the preset
+    names it was seeded with are rows now, and stay as they were written.
+    """
+    changed = payload.model_dump(exclude_unset=True)
+    if not changed:
+        raise HTTPException(
+            status_code=422, detail=t("err.nothing_to_change", from_headers(request.headers))
+        )
+    locale = changed.get("locale") or str(user.get("locale") or DEFAULT_LOCALE)
+    # `null` and `""` both mean "clear it", which puts the account back under the
+    # instance default rather than pinning it to a wrong guess forever.
+    timezone = (changed["timezone"] or None) if "timezone" in changed else user.get("timezone")
+    await db.execute(
+        "UPDATE users SET locale = ?, timezone = ? WHERE id = ?",
+        (normalize(locale), timezone, str(user["id"])),
+    )
+    updated = {**user, "locale": normalize(locale), "timezone": timezone}
+    return _preferences(request, updated, settings)
+
+
 @router.post("/verify", status_code=status.HTTP_204_NO_CONTENT)
 async def verify(
     payload: VerifyRequest,
@@ -338,16 +433,16 @@ async def verify(
     if outcome == VerifyOutcome.EXPIRED:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail="That confirmation link has expired. Request a new one.",
+            detail=t("err.verify_expired", from_headers(request.headers)),
         )
     if outcome == VerifyOutcome.USED:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail="That confirmation link has already been used.",
+            detail=t("err.verify_used", from_headers(request.headers)),
         )
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="That confirmation link is not valid.",
+        detail=t("err.verify_invalid", from_headers(request.headers)),
     )
 
 
@@ -361,26 +456,29 @@ async def verify_resend(
     mailer: MailerDep,
 ) -> Response:
     """Re-send the confirmation link. The previous link stops working."""
+    locale = from_headers(request.headers, user)
     if not settings.confirmation_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email confirmation is not enabled on this server.",
+            detail=t("err.verify_disabled", locale),
         )
     if user.get("is_verified"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This account is already confirmed.",
+            detail=t("err.already_verified", locale),
         )
     _enforce_limit(request, f"resend:{client_ip(request)}")
     issued = await _issue_confirmation(db, settings, mailer, str(user["id"]), str(user["email"]))
     if issued is None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Only {settings.email_sends_per_hour} emails per hour are sent.",
+            detail=t("err.send_cap", locale, limit=settings.email_sends_per_hour),
             headers=_retry_header(3600),
         )
     token, _ = issued
-    background.add_task(_deliver, mailer, confirmation_message(settings, str(user["email"]), token))
+    background.add_task(
+        _deliver, mailer, confirmation_message(settings, str(user["email"]), token, locale)
+    )
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
@@ -411,15 +509,16 @@ async def password_reset_request(
     ip = client_ip(request)
     _enforce_limit(request, f"pwreset-ip:{ip}")
     _enforce_limit(request, f"pwreset-email:{payload.email}")
+    request_locale = from_headers(request.headers)
     if not settings.email_enabled:
         # A deployment fact, not an account fact: without a mail transport nobody
         # can recover anything, and saying so is kinder than a silent 202.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Password recovery needs email configured on this server.",
+            detail=t("err.no_mail_transport", request_locale),
         )
 
-    row = await db.row("SELECT id FROM users WHERE email = ?", (payload.email,))
+    row = await db.row("SELECT id, locale FROM users WHERE email = ?", (payload.email,))
     if row is None:
         # Charged to the IP budget: a spray of unknown addresses has to cost
         # something, and a typo costs the sender one attempt out of a generous IP
@@ -434,7 +533,13 @@ async def password_reset_request(
     token = await create_verification(
         db, str(row["id"]), PASSWORD_RESET, settings.password_reset_ttl_seconds
     )
-    background.add_task(_deliver, mailer, password_reset_message(settings, payload.email, token))
+    # The *mail* follows the account's language — that address already belongs to
+    # the person, and the response above stayed byte-identical either way.
+    background.add_task(
+        _deliver,
+        mailer,
+        password_reset_message(settings, payload.email, token, normalize(row["locale"])),
+    )
     return Response(status_code=status.HTTP_202_ACCEPTED, headers=_retry_header(0))
 
 
@@ -456,13 +561,18 @@ async def password_reset_confirm(
     ip = client_ip(request)
     _enforce_limit(request, f"pwreset-confirm:{ip}")
     limiter = request.app.state.rate_limiter
+    # Every answer here is in the *request's* language, never the account's. The
+    # docstring's invariant is that a weak password reads the same whether the
+    # token was real or not; answering in the owner's French only for a live
+    # token would break it and turn wording into a token probe.
+    request_locale = from_headers(request.headers)
 
     owner = await verification_owner(db, payload.token, PASSWORD_RESET)
     email = ""
     if owner is not None:
         row = await db.row("SELECT email FROM users WHERE id = ?", (owner,))
         email = str(row["email"]) if row else ""
-    problems = check_password(email, payload.password)
+    problems = check_password(email, payload.password, request_locale)
     if problems:
         if limiter:
             limiter.record_failure(f"pwreset-confirm:{ip}")
@@ -475,22 +585,22 @@ async def password_reset_confirm(
         if outcome == VerifyOutcome.EXPIRED:
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
-                detail="That reset link has expired. Request a new one.",
+                detail=t("err.reset_expired", request_locale),
             )
         if outcome == VerifyOutcome.USED:
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
-                detail="That reset link has already been used.",
+                detail=t("err.reset_used", request_locale),
             )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="That reset link is not valid.",
+            detail=t("err.reset_invalid", request_locale),
         )
 
     if owner is None:  # consume_verification returned OK, so this is unreachable
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not complete the reset. Try a new link.",
+            detail=t("err.reset_failed", request_locale),
         ) from None
     await db.execute(
         "UPDATE users SET password_hash = ? WHERE id = ?",
