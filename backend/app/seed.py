@@ -1,9 +1,10 @@
-"""Default catalogs plus a suggestion pool.
+"""Seeding a new account, plus the suggestion pool for the Settings typeahead.
 
-The app's primary use is the postnatal window: pelvic floor symptoms and the
-physio that rebuilds it. Seed defaults are therefore postnatal-oriented, and
-`SUGGESTIONS` holds the longer list of things people commonly want to add later
-(heaviness variants, feeding-posture aches, carry-and-lift triggers...).
+The actual preset sets live in `app/profiles.py`: an account picks one at sign-up
+(or `none` to start empty) and `seed_catalog` writes it out as ordinary definition
+rows. The postnatal set is still the one the module re-exports as `EXERCISES` /
+`SYMPTOMS` / `CONTEXTS`, because that set is also what the suggestion pool is
+built around — the app's primary use is the postnatal window.
 
 Nothing here is prescriptive or medical advice — every preset can be renamed,
 reordered or removed in Settings, and new ones can be typed in.
@@ -15,54 +16,13 @@ from typing import Any
 
 from .db import Database
 from .ids import new_id
+from .profiles import DEFAULT_PROFILE, POSTNATAL_PELVIC, PROFILES
 
-# Seeded at signup: name, body_region, default_sets, default_reps, default_sec
-EXERCISES: tuple[tuple[str, str, int | None, int | None, int | None], ...] = (
-    ("Pelvic Floor Lifts", "pelvic_floor", 3, 10, 5),
-    ("Pelvic Floor Release", "pelvic_floor", 2, 10, 5),
-    ("Deep Core Draw-In", "lower_belly", 3, 10, None),
-    ("Diaphragm Breathing", "ribcage", 2, None, 60),
-    ("Glute Bridge", "hips", 3, 12, None),
-    ("Clamshell", "hips", 3, 12, None),
-    ("Bird Dog", "core", 2, 8, None),
-    ("Supported Squat", "pelvic_floor", 2, 8, None),
-    ("Hamstring Stretch", "hamstrings", 3, None, 30),
-    ("Wall Angels", "upper_back", 2, 10, None),
-)
-
-# Seeded at signup: name, default_region
-SYMPTOMS: tuple[tuple[str, str], ...] = (
-    ("Heaviness / Dragging", "pelvic_floor"),
-    ("Urine Leak", "pelvic_floor"),
-    ("Urgency", "bladder"),
-    ("Gas or Bowel Leak", "bowel"),
-    ("Perineal Pain", "perineum"),
-    ("Scar Pain", "c_section_scar"),
-    ("Pelvic Girdle Pain", "si_joint"),
-    ("Low Back Pain", "lower_back"),
-    ("Pain with Sex", "pelvic_floor"),
-    ("Belly Domining", "lower_belly"),
-)
-
-# Seeded at signup: category, name
-CONTEXTS: tuple[tuple[str, str], ...] = (
-    ("relief", "Ice Pack"),
-    ("relief", "Heat Pack"),
-    ("relief", "Sitz Bath"),
-    ("relief", "Rest"),
-    ("relief", "Ibuprofen"),
-    ("relief", "Stool Softener"),
-    ("relief", "Pelvic Floor PT"),
-    ("relief", "Belly Support"),
-    ("trigger", "Heavy Lifting"),
-    ("trigger", "Cough or Sneeze"),
-    ("trigger", "Long Standing"),
-    ("trigger", "Long Sitting"),
-    ("trigger", "Straining"),
-    ("trigger", "High-Impact Exercise"),
-    ("trigger", "Poor Sleep"),
-    ("trigger", "Carrying Baby"),
-)
+# Re-exported from the postnatal profile so the rest of this module (and the
+# suggestion pool) can talk about "the usual set" without repeating it.
+EXERCISES = POSTNATAL_PELVIC.exercises
+SYMPTOMS = POSTNATAL_PELVIC.symptoms
+CONTEXTS = POSTNATAL_PELVIC.contexts
 
 # Suggestion pool: offered in Settings -> "Suggested presets", never auto-added.
 # exercises: name, body_region, sets, reps, sec;  symptoms: name, region;
@@ -119,32 +79,42 @@ SUGGESTED_CONTEXTS: tuple[tuple[str, str], ...] = (
 )
 
 
-async def seed_catalog(db: Database, user_id: str) -> None:
+async def seed_catalog(db: Database, user_id: str, profile_key: str = DEFAULT_PROFILE) -> int:
+    """Write the chosen profile's presets as ordinary definition rows.
+
+    Returns how many rows were created, which is 0 for `none` — a valid choice,
+    not an error. Every row records the profile that seeded it, so Settings can
+    later say "restore my set" without guessing.
+    """
+    profile = PROFILES.get(profile_key) or PROFILES[DEFAULT_PROFILE]
     await db.executemany(
         "INSERT INTO exercise_definitions"
-        " (id, user_id, name, body_region, default_sets, default_reps, default_sec, sort_order)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " (id, user_id, name, body_region, default_sets, default_reps, default_sec, sort_order,"
+        "  profile_key)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            (new_id(), user_id, name, region, sets, reps, sec, index)
-            for index, (name, region, sets, reps, sec) in enumerate(EXERCISES)
+            (new_id(), user_id, name, region, sets, reps, sec, index, profile.key)
+            for index, (name, region, sets, reps, sec) in enumerate(profile.exercises)
         ],
     )
     await db.executemany(
-        "INSERT INTO symptom_definitions (id, user_id, name, default_region, sort_order)"
-        " VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO symptom_definitions (id, user_id, name, default_region, sort_order,"
+        " profile_key)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
         [
-            (new_id(), user_id, name, region, index)
-            for index, (name, region) in enumerate(SYMPTOMS)
+            (new_id(), user_id, name, region, index, profile.key)
+            for index, (name, region) in enumerate(profile.symptoms)
         ],
     )
     await db.executemany(
-        "INSERT INTO context_definitions (id, user_id, category, name, sort_order)"
-        " VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO context_definitions (id, user_id, category, name, sort_order, profile_key)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
         [
-            (new_id(), user_id, category, name, index)
-            for index, (category, name) in enumerate(CONTEXTS)
+            (new_id(), user_id, category, name, index, profile.key)
+            for index, (category, name) in enumerate(profile.contexts)
         ],
     )
+    return len(profile.exercises) + len(profile.symptoms) + len(profile.contexts)
 
 
 def suggestions(kind: str, existing_names: set[str]) -> list[dict[str, Any]]:

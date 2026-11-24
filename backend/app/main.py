@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from .db import Database
 from .mailer import build_mailer
 from .ratelimit import RateLimiter
-from .routers import analytics, auth, catalog, export, logs
+from .routers import analytics, auth, catalog, export, logs, plan
 from .security import csrf_matches, new_csrf_token
 from .settings import Settings, get_settings
 from .verification import prune_verifications
@@ -191,7 +191,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers.setdefault(key, value)
         return response
 
-    for module in (auth, catalog, logs, analytics, export):
+    for module in (auth, catalog, logs, plan, analytics, export):
         app.include_router(module.router, prefix=API_PREFIX)
 
     @app.get("/healthz", include_in_schema=False)

@@ -160,11 +160,18 @@ async def register(
     verified = 0 if settings.confirmation_enabled else 1
     user_id = new_id()
     await db.execute(
-        "INSERT INTO users (id, email, password_hash, created_at_utc, is_verified)"
-        " VALUES (?, ?, ?, ?, ?)",
-        (user_id, payload.email, hash_password(payload.password), now_utc(), verified),
+        "INSERT INTO users (id, email, password_hash, created_at_utc, is_verified, profile_key)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            user_id,
+            payload.email,
+            hash_password(payload.password),
+            now_utc(),
+            verified,
+            payload.profile,
+        ),
     )
-    await seed_catalog(db, user_id)
+    await seed_catalog(db, user_id, payload.profile)
 
     issued = await _issue_confirmation(db, settings, mailer, user_id, payload.email)
     if issued is not None:
