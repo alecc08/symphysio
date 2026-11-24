@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import time
 
+import pytest
+from app.routers import analytics
 from fastapi.testclient import TestClient
 
 from .conftest import catalog_ids, csrf_headers, register
 
 NOW = int(time.time())
 DAY = 86_400
+# 2026-11-24 00:50 UTC, which is 2026-11-23 19:50 for a user at UTC-5: the two
+# calendars name a different "today". The app is asked about streaks in the user's
+# frame, so this is the moment the arithmetic used to get wrong.
+EST_EVENING = 1_795_481_400
+WEST_OF_UTC = -300
 
 
 def _h(client: TestClient) -> dict[str, str]:
@@ -58,6 +65,52 @@ def test_summary_counts_and_streak(client: TestClient) -> None:
     assert len(body["daily"]) >= 4
     assert body["daily"][-1]["exercises"] == 1
     assert body["exercise_streak_days"] >= 3
+
+
+def _log_evenings(client: TestClient, days_ago: list[int], offset_min: int) -> None:
+    """One exercise entry on each of the given days back, at the same clock time."""
+    exercise = catalog_ids(client, "exercises")[0]
+    for day in days_ago:
+        client.post(
+            "/api/v1/logs/exercises",
+            json={
+                "exercise_id": exercise["id"],
+                "occurred_at_utc": EST_EVENING - day * DAY + 60,
+                "effort_rpe": 4,
+                "tz_offset_min": offset_min,
+            },
+            headers=_h(client),
+        )
+
+
+def test_a_streak_counts_when_utc_is_already_a_day_ahead(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Four evenings in a row is a streak of four, whatever UTC calls today.
+
+    The day buckets are cut in the user's frame (`occurred_at_utc +
+    tz_offset_min * 60`), so "did they log today or yesterday?" has to be asked in
+    that same frame. Asked against UTC it answers 0 for anyone west of UTC for the
+    hours each evening that the two calendars disagree - which is when people
+    actually log, and the same test then passes the next morning, which is how it
+    survived review.
+    """
+    register(client)
+    monkeypatch.setattr(analytics, "now_utc", lambda: EST_EVENING)
+    _log_evenings(client, [1, 2, 3, 4], WEST_OF_UTC)
+    body = client.get("/api/v1/analytics/summary", params={"days": 30}).json()
+    assert body["exercise_streak_days"] == 4
+
+
+def test_a_real_gap_still_breaks_the_streak(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fix is about the frame, not about being generous: three quiet days is 0."""
+    register(client)
+    monkeypatch.setattr(analytics, "now_utc", lambda: EST_EVENING)
+    _log_evenings(client, [3, 4, 5], WEST_OF_UTC)
+    body = client.get("/api/v1/analytics/summary", params={"days": 30}).json()
+    assert body["exercise_streak_days"] == 0
 
 
 def test_summary_is_scoped_to_the_window(client: TestClient) -> None:
