@@ -10,8 +10,21 @@ numbers mean here.
 
 ## [Unreleased]
 
-Nothing beyond the current release. The next items are designed first, in
-[docs/ROADMAP.md](docs/ROADMAP.md).
+Tooling only — no application code, so no image change and no version bump.
+
+- **The release job's own image check had never once passed.** `build.yml` verifies
+  the image it pushed by starting it with the compose hardening flags — but with no
+  `/data` mount, and the app exits 3 when its database path is not writable
+  (`sqlite3.OperationalError: unable to open database file`). The push above that
+  step succeeded, so `:0.1.1` and `:0.1.2` exist on GHCR while the job that claims to
+  have verified them was red every time. Measured by pulling `:0.1.2` and running the
+  step's exact flags. It now mounts a named volume like the CI smoke test does, and
+  removes it.
+- **`scripts/preflight.py`** measures a deployment over HTTP rather than trusting
+  these docs: that no account can read, edit or export another's rows, and that the
+  login limiter keys on the socket peer unless that peer is a listed proxy. Run
+  against 0.1.2 it is clean in both modes; the same script against 0.1.1 answers
+  `[401, 401, 401]` where a lockout should be.
 
 ## [0.1.2] - 2026-11-23
 
