@@ -4,6 +4,7 @@ import { BottomNav, type Tab } from "./components/BottomNav";
 import { EmailBanner } from "./components/EmailBanner";
 import { GearIcon } from "./components/icons/Ui";
 import { BrandMark } from "./components/icons/Tile";
+import { ResetPage } from "./components/ResetPage";
 import { VerifyPage } from "./components/VerifyPage";
 import { AuthPage } from "./pages/AuthPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -23,6 +24,11 @@ function Shell() {
   const [verifying, setVerifying] = useState(
     () => window.location.pathname.replace(/\/+$/, "") === "/verify",
   );
+  // /reset#token=… from the password-reset mail. Checked before the auth branch
+  // because someone using a reset link is, by definition, not signed in.
+  const [resetting, setResetting] = useState(
+    () => window.location.pathname.replace(/\/+$/, "") === "/reset",
+  );
 
   // Every sign-in starts on a clean Log screen: the overlay and tab choices are
   // per-visit state, not per-account state.
@@ -40,7 +46,29 @@ function Shell() {
     );
   }
 
-  if (verifying) return <VerifyPage onDone={() => setVerifying(false)} />;
+  if (verifying) {
+    return (
+      <VerifyPage
+        onDone={() => {
+          // Leave the SPA path, not just the state: a tab that stays on /verify
+          // would show the log screen at a URL that means something else.
+          window.history.replaceState({}, "", "/");
+          setVerifying(false);
+        }}
+      />
+    );
+  }
+
+  if (resetting) {
+    return (
+      <ResetPage
+        onDone={() => {
+          window.history.replaceState({}, "", "/");
+          setResetting(false);
+        }}
+      />
+    );
+  }
 
   if (!user) return <AuthPage />;
 

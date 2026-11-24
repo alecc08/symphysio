@@ -80,14 +80,34 @@ async def consume_verification(db: Database, token: str, purpose: str) -> Verify
     return VerifyOutcome.OK
 
 
-async def count_recent_sends(db: Database, user_id: str, window_seconds: int) -> int:
+async def count_recent_sends(
+    db: Database, user_id: str, window_seconds: int, purpose: str = CONFIRM_EMAIL
+) -> int:
     """Links issued recently for this account, for the per-hour send budget."""
     value = await db.value(
         "SELECT COUNT(*) FROM email_verifications"
         " WHERE user_id = ? AND purpose = ? AND created_at_utc > ?",
-        (user_id, CONFIRM_EMAIL, now_utc() - window_seconds),
+        (user_id, purpose, now_utc() - window_seconds),
     )
     return int(value or 0)
+
+
+async def verification_owner(db: Database, token: str, purpose: str) -> str | None:
+    """The account a live, unused token belongs to, or None.
+
+    Used by the password-reset flow, which has to check the new password against
+    the account's address and therefore needs the address before the token is
+    consumed. It is a lookup by digest, so it reveals nothing about whether a
+    guess was close.
+    """
+    if not token or len(token) > MAX_TOKEN_CHARS:
+        return None
+    row = await db.row(
+        "SELECT user_id FROM email_verifications"
+        " WHERE token_hash = ? AND purpose = ? AND used_at_utc IS NULL AND expires_at_utc > ?",
+        (token_digest(token), purpose, now_utc()),
+    )
+    return None if row is None else str(row["user_id"])
 
 
 async def has_pending_verification(db: Database, user_id: str) -> bool:
@@ -119,4 +139,5 @@ __all__ = [
     "create_verification",
     "has_pending_verification",
     "prune_verifications",
+    "verification_owner",
 ]

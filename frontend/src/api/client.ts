@@ -93,6 +93,12 @@ export const api = {
   // The token arrives in a body, not a URL, so it never lands in a proxy access log.
   verifyEmail: (token: string) => request<void>("/auth/verify", { method: "POST", body: { token } }),
   resendVerification: () => request<void>("/auth/verify/resend", { method: "POST", body: {} }),
+  // Password reset. The request always answers 202 whether or not the address
+  // exists, so the UI must never branch on the status — only on the message.
+  requestPasswordReset: (email: string) =>
+    request<void>("/auth/password-reset/request", { method: "POST", body: { email } }),
+  confirmPasswordReset: (token: string, password: string) =>
+    request<void>("/auth/password-reset/confirm", { method: "POST", body: { token, password } }),
 
   catalog: <T>(kind: CatalogKind, params: Record<string, string | boolean | undefined> = {}) =>
     request<T[]>(`/catalog/${kind}${qs(params)}`),

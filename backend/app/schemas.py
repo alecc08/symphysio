@@ -69,6 +69,30 @@ class VerifyRequest(StrictModel):
     token: Annotated[str, Field(min_length=20, max_length=512)]
 
 
+class PasswordResetRequest(StrictModel):
+    email: Email
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if not EMAIL_RE.match(cleaned):
+            raise ValueError("invalid email address")
+        return cleaned
+
+
+class PasswordResetConfirm(StrictModel):
+    """The token from the emailed link, plus the new password, in one POST.
+
+    The password is checked before the token is consumed, so a rejected password
+    does not burn a single-use link — and the response cannot be used to tell a
+    valid token from an invalid one, because a weak password fails either way.
+    """
+
+    token: Annotated[str, Field(min_length=20, max_length=512)]
+    password: Annotated[str, Field(min_length=8, max_length=256)]
+
+
 class UserOut(StrictModel):
     id: str
     email: str

@@ -16,11 +16,19 @@ from fastapi.responses import JSONResponse
 from ..clientip import client_ip
 from ..db import Database
 from ..deps import AuthedUser, get_db, get_settings
-from ..emails import confirmation_message
+from ..emails import confirmation_message, password_reset_message
 from ..ids import new_id, now_utc
 from ..mailer import Mailer, Message
 from ..password_policy import check_password
-from ..schemas import AuthOut, LoginRequest, RegisterRequest, UserOut, VerifyRequest
+from ..schemas import (
+    AuthOut,
+    LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    RegisterRequest,
+    UserOut,
+    VerifyRequest,
+)
 from ..security import (
     clear_session_cookies,
     create_session,
@@ -36,10 +44,12 @@ from ..seed import seed_catalog
 from ..settings import Settings
 from ..verification import (
     CONFIRM_EMAIL,
+    PASSWORD_RESET,
     VerifyOutcome,
     consume_verification,
     count_recent_sends,
     create_verification,
+    verification_owner,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -365,3 +375,126 @@ async def verify_resend(
     token, _ = issued
     background.add_task(_deliver, mailer, confirmation_message(settings, str(user["email"]), token))
     return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+# -- password reset --------------------------------------------------------
+#
+# Same token discipline as confirmation: 256-bit random, stored only as a
+# SHA-256 digest, single use, short TTL — see app/verification.py. What differs
+# is the blast radius: a confirmation link can only ever confirm an address,
+# while a reset link hands over the account. So the TTL is 30 minutes rather than
+# 24 hours, and using it revokes every session.
+
+
+@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
+async def password_reset_request(
+    payload: PasswordResetRequest,
+    request: Request,
+    background: BackgroundTasks,
+    db: Annotated[Database, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    mailer: MailerDep,
+) -> Response:
+    """Mail a reset link. The answer is identical whether or not the address exists.
+
+    Enumeration is the whole attack surface here: this endpoint is public, so it
+    must not vary by account. Unknown address, known address, and known address
+    over the send budget all answer `202 Accepted` with the same body (empty).
+    """
+    ip = client_ip(request)
+    _enforce_limit(request, f"pwreset-ip:{ip}")
+    _enforce_limit(request, f"pwreset-email:{payload.email}")
+    if not settings.email_enabled:
+        # A deployment fact, not an account fact: without a mail transport nobody
+        # can recover anything, and saying so is kinder than a silent 202.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Password recovery needs email configured on this server.",
+        )
+
+    row = await db.row("SELECT id FROM users WHERE email = ?", (payload.email,))
+    if row is None:
+        # Charged to the IP budget: a spray of unknown addresses has to cost
+        # something, and a typo costs the sender one attempt out of a generous IP
+        # window rather than locking the account's real owner out.
+        _record_failure(request, f"pwreset-ip:{ip}")
+        return Response(status_code=status.HTTP_202_ACCEPTED, headers=_retry_header(0))
+
+    recent = await count_recent_sends(db, str(row["id"]), 3600, PASSWORD_RESET)
+    if recent >= settings.email_sends_per_hour:
+        return Response(status_code=status.HTTP_202_ACCEPTED, headers=_retry_header(3600))
+
+    token = await create_verification(
+        db, str(row["id"]), PASSWORD_RESET, settings.password_reset_ttl_seconds
+    )
+    background.add_task(_deliver, mailer, password_reset_message(settings, payload.email, token))
+    return Response(status_code=status.HTTP_202_ACCEPTED, headers=_retry_header(0))
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def password_reset_confirm(
+    payload: PasswordResetConfirm,
+    request: Request,
+    response: Response,
+    db: Annotated[Database, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    """Use a reset link: set the password, then sign every session out.
+
+    Order matters twice over. The password is validated *before* the token is
+    consumed, so a rejected password does not burn a single-use link; and the
+    response for a weak password is the same whether the token was real or not,
+    so this endpoint cannot be used to fish for live tokens.
+    """
+    ip = client_ip(request)
+    _enforce_limit(request, f"pwreset-confirm:{ip}")
+    limiter = request.app.state.rate_limiter
+
+    owner = await verification_owner(db, payload.token, PASSWORD_RESET)
+    email = ""
+    if owner is not None:
+        row = await db.row("SELECT email FROM users WHERE id = ?", (owner,))
+        email = str(row["email"]) if row else ""
+    problems = check_password(email, payload.password)
+    if problems:
+        if limiter:
+            limiter.record_failure(f"pwreset-confirm:{ip}")
+        raise HTTPException(status_code=422, detail=problems[0])
+
+    outcome = await consume_verification(db, payload.token, PASSWORD_RESET)
+    if outcome != VerifyOutcome.OK:
+        if limiter:
+            limiter.record_failure(f"pwreset-confirm:{ip}")
+        if outcome == VerifyOutcome.EXPIRED:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="That reset link has expired. Request a new one.",
+            )
+        if outcome == VerifyOutcome.USED:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="That reset link has already been used.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That reset link is not valid.",
+        )
+
+    if owner is None:  # consume_verification returned OK, so this is unreachable
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not complete the reset. Try a new link.",
+        ) from None
+    await db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (hash_password(payload.password), owner),
+    )
+    # The point of the whole flow: whoever held the old password, on any device,
+    # is out. Sessions are rows, so revoking is a delete, and a stolen cookie that
+    # is still sitting in some other browser stops working on its next request.
+    revoked = await revoke_all_sessions(db, owner)
+    clear_session_cookies(response, settings)
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT,
+        headers={"X-Revoked-Sessions": str(revoked), **_retry_header(0)},
+    )
