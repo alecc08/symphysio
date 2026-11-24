@@ -78,14 +78,31 @@ export function describeMetric(item: {
   primary_metric: number | null;
   severity: number | null;
   intensity: number | null;
+  severity_default?: number | null;
 }): string {
   const parts: string[] = [];
-  if (item.sets_done != null && item.reps_done != null) parts.push(`${item.sets_done}×${item.reps_done}`);
-  else if (item.reps_done != null) parts.push(`${item.reps_done} reps`);
-  else if (item.sets_done != null) parts.push(`${item.sets_done} sets`);
+  if (item.event_type === "exercise" && item.sets_done === 0) {
+    // "Did not do it today" is a record of keeping track, not a dose of zero.
+    parts.push("skipped");
+  } else if (item.sets_done != null && item.reps_done != null) {
+    parts.push(`${item.sets_done}×${item.reps_done}`);
+  } else if (item.reps_done != null) {
+    parts.push(`${item.reps_done} reps`);
+  } else if (item.sets_done != null) {
+    parts.push(`${item.sets_done} sets`);
+  }
   if (item.duration_sec != null) parts.push(`${item.duration_sec}s`);
   if (item.duration_min != null) parts.push(`${item.duration_min} min`);
-  if (item.event_type === "symptom" && item.severity != null) parts.push(`severity ${item.severity}/10`);
+  if (item.event_type === "symptom" && item.severity != null) {
+    // The row knows whether that number was chosen or left on the drawer's
+    // default, and history says which — otherwise the log reads as a measurement
+    // that was never made.
+    parts.push(
+      item.severity_default === 1
+        ? `severity ${item.severity}/10 (default)`
+        : `severity ${item.severity}/10`,
+    );
+  }
   if (item.event_type === "exercise" && item.primary_metric != null)
     parts.push(`effort ${item.primary_metric}/10`);
   if (item.event_type === "context" && item.intensity != null) parts.push(`${item.intensity}/10`);

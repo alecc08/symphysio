@@ -48,6 +48,20 @@ function plural(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }
 
+/** What the relief/trigger tiles say about themselves.
+
+Hard-coding "Ice, heat, sitz bath, PT" was a postnatal assumption: a hip-and-knee
+or shoulder account gets no sitz bath in its presets, and the tile then advertises
+something the person cannot log. The first few real presets are the honest caption,
+and they follow whatever the person adds or removes. */
+function presetCaption(rows: { name: string }[], empty: string): string {
+  if (rows.length === 0) return empty;
+  return rows
+    .slice(0, 3)
+    .map((row) => row.name.toLowerCase())
+    .join(", ");
+}
+
 export function LogPage() {
   const catalog = useCatalog();
   const [sheet, setSheet] = useState<SheetKind | null>(null);
@@ -102,7 +116,10 @@ export function LogPage() {
         />
         <Tile
           label="Relief / Meds"
-          caption="Ice, heat, sitz bath, PT"
+          caption={presetCaption(
+            catalog.contexts.filter((row) => row.category === "relief"),
+            "add your own",
+          )}
           className="border-relief/25 bg-relief-soft"
           accentClass="text-relief-ink"
           hero={<ReliefHero className="h-11 w-11" />}
@@ -110,7 +127,10 @@ export function LogPage() {
         />
         <Tile
           label="Triggers"
-          caption="Lifting, coughing, standing"
+          caption={presetCaption(
+            catalog.contexts.filter((row) => row.category === "trigger"),
+            "add your own",
+          )}
           className="border-trigger/25 bg-trigger-soft"
           accentClass="text-trigger-ink"
           hero={<TriggerHero className="h-11 w-11" />}

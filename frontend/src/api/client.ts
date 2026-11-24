@@ -3,14 +3,17 @@
 */
 
 import type {
+  Associations,
   AuthResponse,
   ContextDefinition,
   CreatedLog,
   ExerciseDefinition,
-  LagResponse,
+  PlanEvent,
+  Profile,
   Suggestion,
   Summary,
   SymptomDefinition,
+  SymptomTrend,
   TimeOfDay,
   TimelinePage,
 } from "./types";
@@ -83,8 +86,13 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
 export type CatalogKind = "exercises" | "symptoms" | "contexts";
 
 export const api = {
-  register: (email: string, password: string) =>
-    request<AuthResponse>("/auth/register", { method: "POST", body: { email, password } }),
+  register: (email: string, password: string, profile?: string) =>
+    request<AuthResponse>("/auth/register", {
+      method: "POST",
+      // Sent explicitly when the caller chooses: an omitted profile means "the old
+      // default" to the API, which is not the same answer as "start empty".
+      body: profile === undefined ? { email, password } : { email, password, profile },
+    }),
   login: (email: string, password: string) =>
     request<AuthResponse>("/auth/login", { method: "POST", body: { email, password } }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
@@ -137,10 +145,24 @@ export const api = {
   }) => request<TimelinePage>(`/timeline${qs(params)}`),
 
   summary: (days: number) => request<Summary>(`/analytics/summary${qs({ days })}`),
-  lag: (params: { min_hr?: number; max_hr?: number; days?: number; min_count?: number }) =>
-    request<LagResponse>(`/analytics/lag-correlations${qs(params)}`),
+  // "What follows X?" The window label must be one the account's profile offers;
+  // the server rejects invented ones, so the UI only ever sends these.
+  associations: (params: { days?: number; window?: string; exposure?: string }) =>
+    request<Associations>(`/analytics/associations${qs(params)}`),
+  symptomTrend: (definitionId: string, params: { days?: number; baseline_days?: number }) =>
+    request<SymptomTrend>(`/analytics/symptoms/${definitionId}${qs(params)}`),
   timeOfDay: (params: { days?: number; event_type?: string }) =>
     request<TimeOfDay>(`/analytics/time-of-day${qs(params)}`),
+
+  profiles: () => request<Profile[]>("/catalog/profiles"),
+  // Plan events: the appointment layer. Read and written by the signed-in person.
+  planEvents: (params: { limit?: number; from?: number; to?: number } = {}) =>
+    request<PlanEvent[]>(`/plan-events${qs(params)}`),
+  createPlanEvent: (body: Record<string, unknown>) =>
+    request<PlanEvent>("/plan-events", { method: "POST", body }),
+  patchPlanEvent: (id: string, body: Record<string, unknown>) =>
+    request<PlanEvent>(`/plan-events/${id}`, { method: "PATCH", body }),
+  deletePlanEvent: (id: string) => request<void>(`/plan-events/${id}`, { method: "DELETE" }),
 };
 
 /** Plain anchors: cookie auth needs no JS, and the browser shows a save dialog. */

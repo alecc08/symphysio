@@ -110,6 +110,17 @@ export function ClockIcon({ className = "w-5 h-5" }: IconProps) {
   );
 }
 
+/** The appointment marker: a day with something noted on it. */
+export function CalendarIcon({ className = "w-5 h-5" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...base} className={className}>
+      <rect x="4" y="6" width="16" height="14" rx="2" />
+      <path d="M8 4v3M16 4v3M4 11h16" />
+      <path d="M11 15h2" />
+    </svg>
+  );
+}
+
 export function CloseIcon({ className = "w-5 h-5" }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...base} className={className}>

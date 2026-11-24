@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./index.css";
 import "./styles/animations.css";
+import "./styles/print.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root element");

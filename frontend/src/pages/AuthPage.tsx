@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import { BrandMark } from "../components/icons/Tile";
+import { ProfilePicker } from "../components/ProfilePicker";
 import { useSession } from "../state/session";
 
 const MIN_PASSWORD = 12;
@@ -15,6 +16,10 @@ export function AuthPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [resetState, setResetState] = useState<"idle" | "busy" | "sent">("idle");
+  // "Start empty" is the default here on purpose; the API's own default is the
+  // postnatal set for clients that predate the field, and the SPA never relies on
+  // that (it always sends a profile).
+  const [profile, setProfile] = useState("none");
 
   const tooShort = mode === "register" && password.length > 0 && password.length < MIN_PASSWORD;
 
@@ -42,7 +47,7 @@ export function AuthPage() {
       return;
     }
     try {
-      if (mode === "register") await session.register(email, password);
+      if (mode === "register") await session.register(email, password, profile);
       else await session.login(email, password);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Something went wrong. Try again.");
@@ -84,6 +89,8 @@ export function AuthPage() {
             </button>
           ))}
         </div>
+
+        {mode === "register" ? <ProfilePicker value={profile} onChange={setProfile} /> : null}
 
         <label className="block text-sm font-semibold" htmlFor="email">
           Email
