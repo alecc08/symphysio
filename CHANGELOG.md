@@ -26,6 +26,76 @@ Tooling only — no application code, so no image change and no version bump.
   against 0.1.2 it is clean in both modes; the same script against 0.1.1 answers
   `[401, 401, 401]` where a lockout should be.
 
+## [0.2.0] - 2026-11-24
+
+Phase 3: the insights panel rebuilt around one rule — it may only say what the
+diary can actually support. Plus the sign-up profiles and password reset that
+were waiting on the same plumbing. Design and the measurements behind it:
+[docs/INSIGHTS_PLAN.md](docs/INSIGHTS_PLAN.md).
+
+### Added
+
+- **Tracking profiles at sign-up.** Six starting sets instead of one hard-coded
+  postnatal list: after childbirth, bladder & bowel, low back & girdle, shoulder
+  & neck, hip & knee, or start empty. A profile is *seeding, not a schema* — it
+  inserts preset rows and records `profile_key` on them; nothing is hidden or
+  locked, and removing a preset still just archives it. `GET /catalog/profiles`
+  is public because the picker sits on the sign-up card, where there is no
+  session yet. Omitting `profile` keeps the old behaviour byte for byte.
+- **Password reset.** `POST /auth/password-reset/{request,confirm}` on the
+  existing single-use token table, `purpose = 'password_reset'`, 30 minutes. The
+  request endpoint answers `202` whether or not the address exists; the link
+  carries the token in the **fragment**, so it never reaches an access log; a
+  weak password is rejected *before* the token is spent; confirming revokes every
+  session, because whoever asked for a reset is assumed to have lost the device.
+- **Plan events** (`/plan-events`): appointments, programme changes, medication,
+  goals — one line of text and a date. They are the reason a severity curve moved,
+  and they now appear in History and beside any trend. They are deliberately *not*
+  in `v_unified_timeline`: unioning them in would silently move every count and
+  average that view feeds, so History merges the two feeds in the client.
+- **A physio report, by printing.** The Insights page prints its own cards with a
+  header (account, window, date) via a print stylesheet — no PDF endpoint, no
+  server-side rendering, nothing new to keep alive.
+- **Skipped sessions.** A physio drawer toggle logs `sets_done = 0`: the
+  difference between "the programme worked" and "the programme stopped" is a
+  record worth keeping, so it counts for adherence and is excluded from the
+  association maths.
+- **`severity_default`.** The drawer still opens on 5, but 5 is now labelled as a
+  default everywhere — a dashed outline on the scale, "(default)" in History, a
+  column in the export, and a count beside every average that used one. Editing a
+  row clears the flag.
+
+### Changed
+
+- **`GET /analytics/lag-correlations` is gone (404), and a test asserts it.** The
+  old range join answered "does this symptom ever follow this exercise", which at
+  diary sizes is nearly always yes: on seeded *independent* diaries it printed 1
+  spurious pair at 1 log/day, **67** at 3/day and **100** at 8/day. `/analytics/associations`
+  replaces it: each session is compared with matched control windows at the same
+  hour-of-day on days *without* that exposure, and a pair is only called
+  "worth a look" when the exposed rate's Wilson interval sits entirely above the
+  control's. Windows come from the account's profile rather than a slider, because
+  a free-form window is how you fish a pattern out of noise. No p-values and no
+  correlation coefficients are printed anywhere: counts, the matched baseline, and
+  one of four fixed words. `scripts/probes/lag_null.py` re-runs the comparison on
+  independent data and exits non-zero if the new maths ever claims a pattern
+  there; `scripts/probes/rollup_cost.py` times the gap-filled daily series on a
+  two-year diary (2 190 rows, 0.02 s end to end).
+- **Pairs that cannot be answered are explained, not dropped.** The response
+  carries `gates` — `too_few_sessions`, `too_few_hits`, `no_comparable_windows` —
+  so the card can say "you log this almost every day, so there is no comparable
+  day" instead of showing an empty box that reads as "no pattern".
+- **Pickers are `<select>`s, not horizontal chip strips.** Six profile names and
+  ten symptom names do not fit 360 px, and a clipped chip is not a choice.
+- **Export is `schema_version: 2`**: `plan_events`, `profile_key`, and
+  `severity_default` on symptom rows.
+
+### Fixed
+
+- The Relief/Meds and Triggers tiles advertised "Ice, heat, sitz bath, PT" from a
+  string in the page, on accounts whose presets were a hip pack and a foam roller.
+  The caption now lists the first three presets the person actually has.
+
 ## [0.1.3] - 2026-11-24
 
 ### Fixed
@@ -187,7 +257,8 @@ symptoms, in one container with one SQLite file and no third-party services.
 - Dependabot for npm, pip, Docker and Actions, with `uv.lock` verified on every
   PR.
 
-[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/alecc08/symphysio/releases/tag/v0.2.0
 [0.1.3]: https://github.com/alecc08/symphysio/releases/tag/v0.1.3
 [0.1.2]: https://github.com/alecc08/symphysio/releases/tag/v0.1.2
 [0.1.1]: https://github.com/alecc08/symphysio/releases/tag/v0.1.1

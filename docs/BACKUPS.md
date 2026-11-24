@@ -88,8 +88,8 @@ The in-app exports are for *reading*, and they are also the escape hatch:
 
 | Endpoint | Shape |
 | --- | --- |
-| `GET /api/v1/export/csv` | one row per log entry: `event_type`, `definition`, `occurred_at_utc`, `occurred_utc`, local time, dose, severity, note — what you hand a physiotherapist or open in a spreadsheet |
-| `GET /api/v1/export/json` | `app`, `schema_version`, `exported_at_utc`, `user`, `definitions`, `logs` (by kind), `timeline` — a complete, documented dump |
+| `GET /api/v1/export/csv` | one row per log entry: `event_type`, `definition`, `occurred_at_utc`, `occurred_utc`, local time, dose, severity, `severity_default`, note — what you hand a physiotherapist or open in a spreadsheet. Plan events ride along as their own rows (`category` = the event kind, `note` = the text) |
+| `GET /api/v1/export/json` | `app`, `schema_version` (now `2`), `exported_at_utc`, `user` (including `profile_key`), `definitions` (with `profile_key`), `logs` (by kind, symptom rows carrying `severity_default`), `timeline`, `plan_events` — a complete, documented dump |
 
 Export JSON periodically and keep it next to the SQLite dumps: if the schema ever
 moves off SQLite, that file is the import target, and it does not depend on

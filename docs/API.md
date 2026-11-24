@@ -40,32 +40,47 @@ email. Exceeding it returns `429` with `Retry-After`.
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `POST` | `/auth/register` | `{email, password}` → `201` + session cookies + seeded catalog |
+| `POST` | `/auth/register` | `{email, password, profile?}` → `201` + session cookies + seeded catalog. `profile` is a key from `/catalog/profiles`; `"postnatal_pelvic"` when omitted (old clients), `"none"` seeds nothing; an unknown key is a `422` |
 | `POST` | `/auth/login` | `{email, password}` → `200` + session cookies |
 | `POST` | `/auth/logout` | revokes this session, clears cookies → `204` |
 | `POST` | `/auth/logout-all` | revokes every session for the user → `204` |
-| `GET` | `/auth/me` | current user, or `401` |
+| `GET` | `/auth/me` | current user (including `profile_key`), or `401` |
 | `POST` | `/auth/verify` | `{token}` → `204`; unknown token → `400`, expired or already used → `410` |
+| `POST` | `/auth/password-reset/request` | `{email}` → always `202`, whether or not the address exists. Per-IP and per-email limits → `429` + `Retry-After`. The link goes to `{public_url}/reset#token=…`: the token is in the fragment, so it never reaches an access log |
+| `POST` | `/auth/password-reset/confirm` | `{token, password}` → `204` and every session is revoked; weak password → `422` **before** the token is spent; used or expired token → `410` |
 | `POST` | `/auth/verify/resend` | session required → `202`; email not configured, or the account is already confirmed → `409`; over the send budget → `429` + `Retry-After` |
 | `GET` | `/catalog/{kind}` | `kind` ∈ `exercises`, `symptoms`, `contexts`; `?include_archived=true`; contexts also take `?category=relief\|trigger` |
 | `GET` | `/catalog/{kind}/suggestions` | preset ideas the user does not already have, shaped as that kind's create body |
+| `GET` | `/catalog/profiles` | **public** (sign-up has no session yet): `[{key, label, blurb, counts, windows, default_window}]`, windows sorted smallest first. Names and counts only, never account data |
 | `POST` | `/catalog/{kind}` | create → `201` |
 | `PATCH` | `/catalog/{kind}/{id}` | rename / dose / `is_archived` / `sort_order` |
 | `POST` | `/catalog/{kind}/reorder` | `{ids: […]}` — full permutation of visible rows |
-| `POST` | `/logs/exercises` | `{exercise_id, occurred_at_utc?, tz_offset_min, sets_done?, reps_done?, duration_sec?, effort_rpe?, pain_during?, note?}` → `201` |
-| `POST` | `/logs/symptoms` | `{symptom_id, severity, duration_min?, body_region?, …}` → `201` |
+| `POST` | `/logs/exercises` | `{exercise_id, occurred_at_utc?, tz_offset_min, sets_done?, reps_done?, duration_sec?, effort_rpe?, pain_during?, note?}` → `201`. `sets_done: 0` is a *skipped* session: it counts for adherence and is never an exposure |
+| `POST` | `/logs/symptoms` | `{symptom_id, severity, severity_default?, duration_min?, body_region?, …}` → `201`. `severity_default: true` means the number was the drawer's 5, not an answer; editing the row clears it |
 | `POST` | `/logs/contexts` | `{context_id, intensity?, …}` → `201` |
-| `GET` | `/timeline` | merged feed, keyset paged |
+| `GET` | `/timeline` | merged feed, keyset paged. Deliberately does **not** include plan events — see the note under `/plan-events` |
 | `PATCH` | `/logs/{event_type}/{id}` | partial edit; same row, same id |
 | `DELETE` | `/logs/{event_type}/{id}` | hard delete (this is the Undo path) → `204` |
-| `GET` | `/analytics/summary` | `{days}` → totals, daily series, top presets, streak |
-| `GET` | `/analytics/lag-correlations` | `{min_hr, max_hr, days, min_count, limit}` |
-| `GET` | `/analytics/time-of-day` | `{days, event_type}` → 24 buckets in the user's local clock |
-| `GET` | `/export/csv` | flat time series, `Content-Disposition: attachment` |
-| `GET` | `/export/json` | definitions + logs + timeline + schema version |
+| `GET` | `/plan-events` | the appointment layer: `[{id, kind, text, occurred_at_utc, tz_offset_min}]`, `kind` ∈ `appointment`, `programme_change`, `medication`, `goal`, `note` |
+| `POST` | `/plan-events` | `{kind, text, occurred_at_utc?, tz_offset_min}` → `201` |
+| `PATCH` | `/plan-events/{id}` | partial edit |
+| `DELETE` | `/plan-events/{id}` | → `204` |
+| `GET` | `/analytics/summary` | `{days}` → totals (with `severity_defaults`), gap-filled `daily` (one point per day, `logged` flag, `exercises_skipped`), `adherence` in whole weeks, `coverage`, top presets, streak |
+| `GET` | `/analytics/associations` | `{days, window?, exposure?}` → “what follows a session?”. `window` must be a label the account's profile offers (`422` otherwise) — free-form windows are how you fish a pattern out of noise. Returns `findings` (counts + matched baseline + one fixed verdict word), `gates` (why refused pairs were refused), `pairs_examined`, `coverage` |
+| `GET` | `/analytics/symptoms/{definition_id}` | `{days, baseline_days?}` → one symptom against its own first `baseline_days` in the range, with `adherence` beside it. Never a population norm, never another user |
+| `GET` | `/analytics/time-of-day` | `{days, event_type}` → 24 buckets in the user's local clock. Descriptive only: it claims no causation |
+| `GET` | `/export/csv` | flat time series, `Content-Disposition: attachment`. Includes plan events (mapped to `category`/`note`) and the `severity_default` column |
+| `GET` | `/export/json` | definitions + logs + timeline + `plan_events`, `schema_version: 2` |
 | `GET` | `/healthz` | liveness, no auth |
 
 `event_type` ∈ `exercise | symptom | context`.
+
+### Why plan events are not in the timeline view
+
+`plan_events` is a separate table and `v_unified_timeline` deliberately does not
+union it: adding it would silently move every count, average and lag number that
+view feeds. The History screen merges the two feeds in the client, which is the
+only place that needs both.
 
 ## Email confirmation
 

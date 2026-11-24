@@ -134,7 +134,16 @@ SQL, because the ranking rule (§2.3) is not something to write in a `HAVING`.
   result set is sorted by the Wilson lower bound (the conservative number, not
   the point estimate), capped at 8, and the card states *"8 of 42 pairs
   examined"*. Ranking by the bound is what kills the noise: at the probe's dense
-  rate a chance pair's bound sits at ~1.
+  rate a chance pair's bound sits at ~1. Textbook Bonferroni over 24 pairs asks
+  for 99.79 % per pair, and at diary-sized n (7 of 8 against 0 of 17) that bound
+  no longer separates anything — the card would be unfalsifiable. The per-pair
+  level therefore has a floor of 1 % (`MIN_PER_PAIR_ALPHA`), a judgement call
+  whose check is empirical rather than theoretical: with the floor in place
+  `scripts/probes/lag_null.py` still finds **zero** claims on independent diaries
+  at three densities, while the demo diary's strongest pair (7 of 8 against 0 of
+  17) is finally allowed to say so. Without the floor that pair is refused by
+  0.003 of interval — the honest description of strict Bonferroni at this n is
+  "the card almost never answers".
 - **Windows come from the profile** (§5.3), not from a hard-coded trio of chips.
 - No p-values, no CI text, no "p < 0.05" anywhere in the UI: the bound exists to
   pick what is *worth printing*, not to be shown as statistics.
@@ -255,13 +264,14 @@ Settings can add another profile's presets later without touching history.
 
 ### 5.1 Where it lives
 
-- `app/presets/__init__.py`: a registry `PROFILES: dict[key, Profile]` replacing
-  the flat `seed.EXERCISES/SYMPTOMS/CONTEXTS` (which becomes the
-  `postnatal_pelvic` entry, so existing installs and `tests/` keep working).
-  Each `Profile` carries `label`, `blurb`, `icon`, the three preset lists, and
-  `windows: [(label, min_hr, max_hr), ...]`.
-- `GET /catalog/profiles` → `{key, label, blurb, counts}` — the UI never
-  hard-codes the list, same reasoning as `suggestions`.
+- `app/profiles.py` *(not `app/presets/` as first drafted — one module, no
+  package, since it is a table and a dataclass)*: a registry
+  `PROFILES: dict[key, Profile]` sitting beside the flat
+  `seed.EXERCISES/SYMPTOMS/CONTEXTS`, which stays as the seed for accounts that
+  predate the field. Each `Profile` carries `label`, `blurb`, the three preset
+  lists, and `windows: [(label, min_hr, max_hr), ...]` plus `default_window`.
+- `GET /catalog/profiles` → `{key, label, blurb, counts, windows, default_window}`
+  — public, and the UI never hard-codes the list, same reasoning as `suggestions`.
 - `POST /auth/register` gains `profile: str = "postnatal_pelvic"`, validated
   against the registry; an unknown key is a `422`, and omitting it keeps today's
   behaviour exactly (an old client still works). `"none"` seeds nothing.
@@ -293,7 +303,13 @@ Each profile seeds ~10 exercises, 8–10 symptoms, ~8 relief and ~8 triggers —
 same shape as today's postnatal seed, one tap to log, all editable. Names below
 are the preset names, written the way a person would say them on a phone at 8 pm.
 
-**1. `postnatal_pelvic` — Pelvic health after childbirth** *(default, the focus)*
+The picker is a plain `<select>` — a strip of chips showed one and a half of six
+choices at 360 px — so each profile's label is short enough to read inside it
+(~20 characters) and the sentence beside it does the explaining. “Pelvic health
+after childbirth” truncates to “Pelvic health after childbi”; “After childbirth”
+does not.
+
+**1. `postnatal_pelvic` — “After childbirth”** *(default, the focus)*
 Today's seed, unchanged, so existing accounts and screenshots do not move.
 
 | | |
@@ -304,8 +320,8 @@ Today's seed, unchanged, so existing accounts and screenshots do not move.
 | Triggers | Heavy Lifting · Cough or Sneeze · Long Standing · Long Sitting · Straining · High-Impact Exercise · Poor Sleep · Carrying Baby |
 | Windows | `0–2 h` (leak with a cough/lift) · `1–6 h` (default) · `6–48 h` (next-day flare) |
 
-**2. `bladder_bowel` — Leakage, urgency, bowel control** *(same anatomy, no birth
-context: menopause, runners, prostatectomy recovery, chronic urgency)*
+**2. `bladder_bowel` — “Bladder & bowel”** *(same anatomy, no birth context:
+menopause, runners, prostatectomy recovery, chronic urgency)*
 
 | | |
 | --- | --- |
@@ -315,7 +331,7 @@ context: menopause, runners, prostatectomy recovery, chronic urgency)*
 | Triggers | Cough or Sneeze · Laughing · Running / Jumping · Heavy Lifting · Caffeine · Fluid Before Bed · Alcohol · Long Driving |
 | Windows | `0–1 h` (default — this is a minutes-scale story) · `1–6 h` · `6–24 h` |
 
-**3. `low_back_girdle` — Low back, SI and pelvic girdle pain**
+**3. `low_back_girdle` — “Low back & girdle”**
 
 | | |
 | --- | --- |
@@ -325,8 +341,8 @@ context: menopause, runners, prostatectomy recovery, chronic urgency)*
 | Triggers | Long Sitting · Long Standing · Bending / Lifting · Carrying on One Side · Driving · Poor Sleep · Climbing Stairs · Doing Too Much Too Soon |
 | Windows | `0–2 h` (mechanical, immediate) · `1–12 h` (default) · `12–48 h` (next-day stiffness) |
 
-**4. `shoulder_neck` — Shoulder, neck and carrying posture** *(the other half of
-postnatal life: feeding posture, car seats, one-side carrying, desk)*
+**4. `shoulder_neck` — “Shoulder & neck”** *(the other half of postnatal life:
+feeding posture, car seats, one-side carrying, desk)*
 
 | | |
 | --- | --- |
@@ -336,7 +352,7 @@ postnatal life: feeding posture, car seats, one-side carrying, desk)*
 | Triggers | Feeding Posture · Looking Down at Phone · Carrying on One Side · Reaching Overhead · Long Desk Session · Sleeping Position · Carrying the Car Seat · Cold Weather |
 | Windows | `0–3 h` (positional, same day) · `3–24 h` (default) · `24–72 h` (delayed soreness) |
 
-**5. `hip_knee` — Hip, knee and return to running** *(the "when can I run again"
+**5. `hip_knee` — “Hip & knee”** *(the "when can I run again"
 diary: load management, tendons, impact)*
 
 | | |
@@ -467,7 +483,7 @@ Small, independently shippable, each one useful on its own and each one testable
 against the published image (the 0.1.3 lesson: verify the bytes, not the source).
 
 **Password reset runs as a parallel track** *(decided 2026-11-24)* — `RESET`
-below, and it does not touch anything in `insights/`, `presets/` or the drawer,
+below, and it does not touch anything in `insights/`, `profiles.py` or the drawer,
 so the two streams cannot collide. Because a release is tagged from `VERSION` on
 `main`, merges stay serial whichever stream finishes first: whoever merges gets
 the next `0.2.x`.
@@ -484,6 +500,30 @@ the next `0.2.x`.
 
 Still out of this phase, still in ROADMAP: passkeys, web-push reminders,
 caregiver share links.
+
+### 9.1 What actually shipped *(2026-11-24)*
+
+**One PR, not six** — decided when the phase was started: the streams turned out
+to be small enough that the coordination cost of six branches exceeded the risk
+of one. `RESET`, A, B, C, D and E are all in `0.2.0`, in that commit order.
+
+Deviations from the table, all of them smaller than planned:
+
+- **No per-symptom route** (§6.1's `/insights/symptom/{id}`). The trend is a card
+  on the Insights page with a `<select>` for the symptom, on the same `/insights`
+  URL. A second route and a second page for one card is a thing to maintain, and
+  nothing needed deep-linking to it.
+- **The profile picker is a `<select>`, not a set of cards.** Six names do not fit
+  a phone as cards or as a horizontal strip; the blurb and the counts sit under it.
+- **The "skipped session" control is a toggle in the Physio drawer**, not a fifth
+  tile.
+- **PR F's `apply_profile` did not ship.** Adding a second set to an existing
+  account is a handful of rows and no schema, so it stays deferred rather than
+  being built under time pressure; a person who wants the hip-and-knee presets
+  types them in, or the suggestions pool offers them one tap at a time.
+- **§4's dose adjustment and log-time note did not ship** — B landed the
+  `severity_default` label, the remembered-last chip and the `_latest_offset` fix,
+  which are the parts the maths actually depends on.
 
 ---
 

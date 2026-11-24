@@ -62,9 +62,9 @@ All of it from a seeded demo account — no real health data anywhere in this re
 | --- | --- |
 | ![The Log grid: Physio, Symptoms, Relief/Meds, Triggers](docs/media/log-grid.png) | ![The symptom drawer with the severity scale and time chips](docs/media/symptom-sheet.png) |
 
-| History, with Undo still up | The lag panel: what follows what |
+| History, with Undo still up | What follows a session, in words |
 | --- | --- |
-| ![Unified history feed with edit and delete on each row](docs/media/history.png) | ![Symptoms that follow an exercise, with average lag and severity](docs/media/lag-correlations.png) |
+| ![Unified history feed with edit and delete on each row](docs/media/history.png) | ![The association card: counts, a matched baseline and one verdict word](docs/media/associations.png) |
 
 | Settings: your presets and your data | Dark theme, same layout |
 | --- | --- |
@@ -153,10 +153,10 @@ GitHub Actions runs all of the above on every push and pull request, plus:
 | Area | Detail |
 | --- | --- |
 | **Log** | Four tiles (Physio, Symptoms, Relief/Meds, Triggers). Tap tile → tap preset → saved. Optional dose/effort/pain/severity/duration and retroactive time. |
-| **History** | Unified chronological feed with filters, inline edit (severity, note, time) and delete with Undo. |
-| **Insights** | Daily counts, severity trend, hour-of-day distribution, top presets, and exercise→symptom lag correlations over a configurable window. |
+| **History** | Unified chronological feed with filters, inline edit (severity, note, time) and delete with Undo. Plan events (appointments, programme changes, medication) ride in the same feed. |
+| **Insights** | Counts and streak, gap-filled daily bars, whole-week adherence, one symptom against its own first two weeks, hour-of-day distribution, top presets, and a "what follows a session?" card that compares each exercise against matched control windows and says one of four fixed words about it. Charts are hand-built from divs, no chart dependency. |
 | **Settings** | Catalog manager (add / rename / reorder / remove / restore, plus a suggested-preset pool), CSV and JSON export, sign out one or all devices. |
-| **Account** | Optional email confirmation (Resend, or nothing at all): a single-use 24 h link, a reminder banner, and a gate that is the admin's choice — `off`, `optional` (default) or `required`. Sign-up itself can be closed with `SYPHYSIO_ALLOW_REGISTRATION=0`. |
+| **Account** | Sign-up picks a starting set from six tracking profiles (after childbirth, bladder & bowel, low back & girdle, shoulder & neck, hip & knee, or start empty) — presets only, never a restriction. Optional email confirmation (Resend, or nothing at all): a single-use 24 h link, a reminder banner, and a gate that is the admin's choice — `off`, `optional` (default) or `required`. Password reset by email link, token in the URL fragment. Sign-up itself can be closed with `SYPHYSIO_ALLOW_REGISTRATION=0`. |
 | **API** | `/api/v1` JSON only: auth, catalog, logs, timeline, analytics, export. Contract in [docs/API.md](docs/API.md). |
 
 ## Documentation
@@ -164,7 +164,7 @@ GitHub Actions runs all of the above on every push and pull request, plus:
 | File | Contents |
 | --- | --- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Request path, module map, SPA/API split |
-| [docs/DATABASE.md](docs/DATABASE.md) | Schema rationale, time model, the lag query, migrations |
+| [docs/DATABASE.md](docs/DATABASE.md) | Schema rationale, time model, the association maths, migrations |
 | [docs/API.md](docs/API.md) | Every endpoint, auth/CSRF rules, status codes |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, headers, session and password handling |
 | [docs/DEPLOYING.md](docs/DEPLOYING.md) | Container, reverse proxy, environment variables |
@@ -177,15 +177,16 @@ GitHub Actions runs all of the above on every push and pull request, plus:
 
 ## Status
 
-Phase 1 and 2 are implemented and covered by tests; Phase 3 ships the insights
-charts and lag correlations (charts are hand-built, no chart dependency). Email
-confirmation is built — a hashed single-use token and a 24 h link — and it is the
-operator's choice how much it matters: `SYPHYSIO_EMAIL_CONFIRMATION` is `off`,
-`optional` (default: link plus a reminder banner, never a lockout) or `required`.
-With no mail transport configured the app behaves as if it were off.
+Phase 1, 2 and 3 are implemented and covered by tests. Phase 3 is the insights
+panel rebuilt to say only what a small diary can support (charts are hand-built,
+no chart dependency), the tracking profiles offered at sign-up, plan events, and
+password reset. Email confirmation is built — a hashed single-use token and a
+24 h link — and it is the operator's choice how much it matters:
+`SYPHYSIO_EMAIL_CONFIRMATION` is `off`, `optional` (default: link plus a reminder
+banner, never a lockout) or `required`. With no mail transport configured the app
+behaves as if it were off.
 
-Next, in [docs/ROADMAP.md](docs/ROADMAP.md): **password reset**, on the same
-token plumbing. WebAuthn passkeys follow.
+Next, in [docs/ROADMAP.md](docs/ROADMAP.md): **WebAuthn passkeys**.
 
 ## License
 
