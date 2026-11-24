@@ -23,7 +23,11 @@ def verification_link(settings: Settings, token: str) -> str:
     """Absolute link. Host comes from config, never from the request's Host header."""
     if settings.public_url is None:  # guarded by Settings.email_enabled
         raise RuntimeError("SYPHYSIO_PUBLIC_URL is required to build a verification link")
-    return f"{settings.public_url}/verify?token={token}"
+    # A fragment, not a query string: the browser never sends the part after `#`
+    # to the server, so no access log — Traefik's, uvicorn's, or a CDN's — can
+    # ever record a live confirmation token. A `?token=` link did get logged:
+    # measured, uvicorn recorded `GET /verify?token=…` when the link was opened.
+    return f"{settings.public_url}/verify#token={token}"
 
 
 def confirmation_message(settings: Settings, to: str, token: str) -> Message:

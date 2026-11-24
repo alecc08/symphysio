@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
+from ..clientip import client_ip
 from ..db import Database
 from ..deps import AuthedUser, get_db, get_settings
 from ..emails import confirmation_message
@@ -42,14 +43,6 @@ from ..verification import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _client_ip(request: Request) -> str:
-    """Best-effort client address (trust X-Forwarded-For only behind your proxy)."""
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def get_mailer(request: Request) -> Mailer:
@@ -128,7 +121,7 @@ async def register(
     settings: Annotated[Settings, Depends(get_settings)],
     mailer: MailerDep,
 ) -> AuthOut:
-    ip = _client_ip(request)
+    ip = client_ip(request)
     _enforce_limit(request, f"register:{ip}")
     if not settings.allow_registration:
         # Charged to the limiter like any other rejected attempt: a closed door
@@ -206,7 +199,7 @@ async def login(
     settings: Annotated[Settings, Depends(get_settings)],
     mailer: MailerDep,
 ) -> AuthOut:
-    ip = _client_ip(request)
+    ip = client_ip(request)
     _enforce_limit(request, f"login-ip:{ip}")
     _enforce_limit(request, f"login-email:{payload.email}")
 
@@ -309,8 +302,9 @@ async def verify(
     db: Annotated[Database, Depends(get_db)],
 ) -> Response:
     """Consume a confirmation token. The token arrives in the JSON body, never in a
-    URL the server logs, so the SPA reads it from ``?token=`` and posts it here."""
-    ip = _client_ip(request)
+    URL the server logs: the mail's link carries it as a URL fragment (``#token=``),
+    which the browser never sends here, and the SPA posts it to this endpoint."""
+    ip = client_ip(request)
     _enforce_limit(request, f"verify:{ip}")
     limiter = request.app.state.rate_limiter
 
@@ -360,7 +354,7 @@ async def verify_resend(
             status_code=status.HTTP_409_CONFLICT,
             detail="This account is already confirmed.",
         )
-    _enforce_limit(request, f"resend:{_client_ip(request)}")
+    _enforce_limit(request, f"resend:{client_ip(request)}")
     issued = await _issue_confirmation(db, settings, mailer, str(user["id"]), str(user["email"]))
     if issued is None:
         raise HTTPException(

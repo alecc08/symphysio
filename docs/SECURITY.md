@@ -57,10 +57,15 @@ Double-submit, enforced by middleware before routing:
   never filled, so `429` could not happen.)
 - In-process and per-worker: run **one** uvicorn worker (see DEPLOYING.md). Put
   the limiter in Redis if you ever need more than one process.
-- The client key is the first entry of `X-Forwarded-For` when the header is
-  present, otherwise the socket peer. That is only safe behind a proxy that sets
-  `X-Forwarded-For` (Caddy, Traefik, nginx), which is why the compose file binds
-  to `127.0.0.1`: expose uvicorn directly and a client can forge the header.
+- The client key is the **socket peer**, unless that peer is one of
+  `SYPHYSIO_TRUSTED_PROXIES`; only then is `X-Forwarded-For` read, and only down
+  to the right-most entry that is not itself a proxy of ours. Behind Traefik that
+  peer is the proxy container, so the list has to name its network — leave it
+  empty and every visitor shares one budget.
+- That is not decoration. Before the rule existed, the header was believed
+  whenever it was present, measured against the published image with
+  `ATTEMPTS=1`: a failed login, then a second carrying `X-Forwarded-For: 9.9.9.9`,
+  answered `401`. One header per request and the per-IP budget never ran out.
 
 ## Registration
 
@@ -82,18 +87,17 @@ The same shape as sessions, because the threat is the same: a long random value
 in flight, only its SHA-256 digest at rest.
 
 - 256-bit token (`secrets.token_urlsafe(32)`), stored as `sha256(token)` in
-  `email_verifications.token_hash`, TTL `SYPHYSIO_EMAIL_VERIFICATION_TTL_SECONDS`
-  (24 h), single use (`used_at_utc`).
-- The API never sees the token in a URL: the SPA posts it in a JSON body to
-  `POST /api/v1/auth/verify` and rewrites the address bar before anything else
-  runs, so it does not linger in browser history or a `Referer`.
-- **But the browser does open `GET /verify?token=…`**, so the token appears in
-  the access log of whatever serves that page. Mitigations, in order: the
-  container starts uvicorn with `--no-access-log` (the image's entrypoint, and
-  `docker-compose.yml` matches), and the reverse proxy in front should mask the
-  parameter — Traefik `--accessLog.maskedParameters=token`, or
-  `location = /verify { access_log off; }` on nginx. If you run uvicorn with its
-  access log on, confirmation tokens end up in `docker logs`.
+  `email_verifications.token_hash`, TTL `SYPHYSIO_EMAIL_TTL_SECONDS` (24 h),
+  single use (`used_at_utc`).
+- The link is `{SYPHYSIO_PUBLIC_URL}/verify#token=…`, with the token in a URL
+  **fragment**. A browser never sends the part after `#` to any server, so no
+  access log — uvicorn's, Traefik's, a CDN's — can hold a live token. It used to
+  be `?token=`, and it was logged: `GET /verify?token=…` appeared in uvicorn's
+  request line. The SPA still understands a query-string link, so a mail from an
+  older release keeps working.
+- The API receives the token as JSON in a POST body, and the SPA erases it from
+  the address bar before anything else runs, so it does not sit in browser history
+  or a `Referer` either.
 - Lookup is by digest, so a forged token matches no row: guessing is bounded by
   the IP counter on `/auth/*`, not by a per-account budget an attacker can probe
   to enumerate accounts.
@@ -193,10 +197,10 @@ Cache-Control: no-store
 - Only `/data` (the SQLite file) and a small `/tmp` tmpfs are writable, so a
   compromise of the process cannot install persistence on disk.
 - No secrets in the image or in git; configuration is environment variables
-  only. Logging is deliberately thin: uvicorn starts with `--no-access-log`
-  because the confirmation navigation carries a live token in its query string,
-  and no application log writes tokens, password hashes or notes. Traffic
-  logging belongs at the proxy, with `token` masked.
+  only. Logging is deliberately thin: uvicorn starts with `--no-access-log`, and
+  no application log writes tokens, password hashes or notes. Traffic logging
+  belongs at the reverse proxy — and since the confirmation token travels in a
+  fragment, there is nothing left there to mask.
 
 ## Deliberate gaps
 

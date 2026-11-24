@@ -1,9 +1,10 @@
-/* The page an emailed confirmation link lands on: /verify?token=…
+/* The page an emailed confirmation link lands on: /verify#token=…
  *
- * The token is lifted out of the URL and posted to the API, then erased from the
- * address bar, because a URL can end up in browser history, a screenshot or a
- * proxy log. The token is single-use anyway, but the page should not sit there
- * displaying it.
+ * The token travels in the URL *fragment*, which the browser never sends to the
+ * server, so no access log anywhere can hold it. It is lifted out of the address
+ * bar before anything else runs anyway, because a URL can end up in browser
+ * history or a screenshot. A link that still carries `?token=` (an older mail) is
+ * read too.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,6 +20,13 @@ type State =
   | { kind: "failed"; message: string; resendable: boolean };
 
 const WORKING: State = { kind: "working" };
+
+/** The token, from `#token=…` (what the mail sends) or `?token=…` (an older one). */
+function tokenFromUrl(): string | null {
+  const hash = window.location.hash.replace(/^#/, "");
+  const fromHash = new URLSearchParams(hash).get("token");
+  return fromHash ?? new URLSearchParams(window.location.search).get("token");
+}
 
 export function VerifyPage({ onDone }: { onDone?: () => void }) {
   const { reload, user } = useSession();
@@ -36,7 +44,7 @@ export function VerifyPage({ onDone }: { onDone?: () => void }) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    const token = new URLSearchParams(window.location.search).get("token");
+    const token = tokenFromUrl();
     // Drop the token from the visible URL before anything else happens.
     window.history.replaceState({}, "", "/verify");
     if (!token) {

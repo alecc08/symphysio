@@ -77,7 +77,7 @@ def register_by_mail(client: TestClient, email: str = MAIL_EMAIL) -> dict:
 
 
 def token_from(message: Message) -> str:
-    marker = f"{PUBLIC_URL}/verify?token="
+    marker = f"{PUBLIC_URL}/verify#token="
     start = message.text.index(marker) + len(marker)
     return message.text[start:].splitlines()[0].strip()
 
@@ -92,7 +92,7 @@ def test_register_sends_exactly_one_link(mail_client: TestClient) -> None:
     assert len(messages) == 1
     assert messages[0].to == MAIL_EMAIL
     assert messages[0].subject == "Confirm your Symphysio account"
-    assert f"{PUBLIC_URL}/verify?token=" in messages[0].text
+    assert f"{PUBLIC_URL}/verify#token=" in messages[0].text
 
 
 def test_the_outbox_backend_also_writes_a_readable_file(
@@ -104,7 +104,7 @@ def test_the_outbox_backend_also_writes_a_readable_file(
     files = list((tmp_path / "outbox").glob("*.eml"))
     assert len(files) == 1
     written = files[0].read_text(encoding="utf-8")
-    assert f"{PUBLIC_URL}/verify?token={token}" in written
+    assert f"{PUBLIC_URL}/verify#token={token}" in written
     assert written.startswith("Date:") and "Subject: Confirm your Symphysio account" in written
 
 
@@ -136,7 +136,7 @@ def test_the_link_host_comes_from_config_not_the_request(mail_client: TestClient
     )
     assert response.status_code == 201
     text = outbox(mail_client)[-1].text
-    assert f"{PUBLIC_URL}/verify?token=" in text
+    assert f"{PUBLIC_URL}/verify#token=" in text
     assert "evil.example" not in text
 
 

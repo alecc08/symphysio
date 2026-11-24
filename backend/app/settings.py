@@ -6,6 +6,7 @@ HTTP unless the operator opts in explicitly (see `cookie_secure`).
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,7 @@ class Settings:
     email_sends_per_hour: int
     email_confirmation: str  # "off" | "optional" | "required"
     allow_registration: bool = True  # keyword default: see get_settings
+    trusted_proxies: tuple[str, ...] = ()  # CIDRs of *your* proxy, never a client
 
     @property
     def session_cookie(self) -> str:
@@ -91,6 +93,27 @@ def _env_url(name: str) -> str | None:
 
 
 _EMAIL_MODES = ("off", "optional", "required")
+
+
+def _env_cidrs(name: str) -> tuple[str, ...]:
+    """Parse a comma-separated list of CIDRs/IPs, and refuse a typo out loud.
+
+    A proxy list that silently drops one entry is worse than a crash: the
+    limiter would go back to keying on the socket peer (or, if the bad entry was
+    a client range, start believing a header again), and nothing would say so.
+    """
+    raw = os.environ.get(name, "")
+    entries = [entry.strip() for entry in raw.replace(",", " ").split() if entry.strip()]
+    parsed: list[str] = []
+    for entry in entries:
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+        except ValueError as error:
+            raise ValueError(
+                f"{name} contains {entry!r}, which is not an IP or CIDR ({error})"
+            ) from error
+        parsed.append(str(network))
+    return tuple(parsed)
 
 
 def _email_confirmation_mode() -> str:
@@ -152,4 +175,11 @@ def get_settings() -> Settings:
         # instance that is reachable from the internet should close this once
         # its own accounts exist - see docs/DEPLOYING.md.
         allow_registration=_env_bool("SYPHYSIO_ALLOW_REGISTRATION", True),
+        # The addresses of *your* reverse proxy. Empty (the default) means "no
+        # proxy": X-Forwarded-For is ignored entirely and the limiter keys on the
+        # socket peer. Set this to the network your proxy actually connects from -
+        # behind Traefik that peer is the traefik container, so leaving this empty
+        # makes every visitor share one budget, and setting it too wide makes the
+        # header believable again.
+        trusted_proxies=_env_cidrs("SYPHYSIO_TRUSTED_PROXIES"),
     )
