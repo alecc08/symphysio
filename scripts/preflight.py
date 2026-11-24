@@ -6,20 +6,20 @@
    one handler, so it is checked over HTTP against the image you are about to run,
    not against the source you read.
 2. **The login limiter keys on an address the caller does not control** — the
-   socket peer, unless that peer is inside `SYPHYSIO_TRUSTED_PROXIES`.
+   socket peer, unless that peer is inside `SYMPHYSIO_TRUSTED_PROXIES`.
 
 Run it twice against the same container, from two source addresses, so both sides
 of the rule are measured:
 
     # the container is on two networks: a plain one, and an "edge" one whose
-    # gateway sits inside SYPHYSIO_TRUSTED_PROXIES
+    # gateway sits inside SYMPHYSIO_TRUSTED_PROXIES
     docker network create --subnet 172.20.0.0/24 edge
     docker run -d --name preflight --network bridge \
       --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
       --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
       -v preflight-data:/data \
-      -e SYPHYSIO_COOKIE_SECURE=0 -e SYPHYSIO_TRUSTED_PROXIES=172.20.0.0/24 \
-      -e SYPHYSIO_RATE_LIMIT_ATTEMPTS=2 <image>
+      -e SYMPHYSIO_COOKIE_SECURE=0 -e SYMPHYSIO_TRUSTED_PROXIES=172.20.0.0/24 \
+      -e SYMPHYSIO_RATE_LIMIT_ATTEMPTS=2 <image>
     docker network connect edge preflight
     python3 scripts/preflight.py http://<bridge-ip>:8000 untrusted
     python3 scripts/preflight.py http://<edge-ip>:8000     trusted

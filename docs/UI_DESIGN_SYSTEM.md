@@ -173,6 +173,31 @@ inline style. Anything that needs a computed geometry goes through a ref.
 - **Unauthenticated**: the auth screen *is* the register screen — one form, one
   button, with the password rules shown as you type.
 
+## Language
+
+Two languages, one layout. French copy runs about a fifth longer than the English
+("Soulagement / médicaments", "Levage de charges lourdes"), and in a few places
+the word order differs, so:
+
+- Nothing is built by concatenating fragments. A sentence is one dictionary entry
+  with `{slots}`; where French needs the verb earlier there are two keys rather
+  than a piece of English with a French noun inserted.
+- Plural is a key suffix, not a branch: `t("insights.skipped", {count})` picks
+  `<key>_one` at 1, so "1 séance" and "12 séances" are both the dictionary's
+  problem and neither card does arithmetic on grammar.
+- Long labels wrap inside their box (`flex-wrap` on every chip row, which is why
+  the History filters wrap instead of scrolling at 360 px) rather than shrinking
+  the type; a control that gets a smaller font in French is a control that fails
+  the 44 px target.
+- `aria-label`s and `title`s are translated too: a screen reader in French reading
+  "Supprimer Lourdeur" half-and-half is worse than one reading either language.
+- `<html lang>` follows the choice, so the browser's own hyphenation, and VoiceOver's
+  pronunciation, switch with the app.
+- Preset rows keep the name they were created with. A French app showing
+  "Urine Leak" is not a bug: it is the name that person has been logging for
+  months, and the same word appears in their History, their CSV and their
+  physiotherapist's printout.
+
 ## Reference screens
 
 The README gallery covers the light theme. These two are here because they show

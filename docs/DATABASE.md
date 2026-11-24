@@ -56,6 +56,34 @@ timezone name would have been nicer and would have required the client to know
 the tz database; an offset at the moment of the event is enough because nobody
 cares about historical DST for a symptom diary.
 
+### Preferences are account columns, not request state
+
+`004_preferences.sql` adds two columns, both additive and neither rewriting
+anything:
+
+```sql
+ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en';
+ALTER TABLE users ADD COLUMN timezone TEXT;
+```
+
+- `locale` is `en` or `fr` (Québec French). The default is `en` because that is
+  what every account before 0.3.0 was seeded with — the default describes
+  history, exactly like `profile_key` in 003, not what new accounts should get.
+- `timezone` is an IANA name and **nullable**, where `NULL` means "this account
+  never chose". That is not the same as choosing UTC, and the difference is what
+  lets `SYMPHYSIO_DEFAULT_TIMEZONE` apply to accounts that never saw the setting.
+- Neither column is indexed. Nothing asks "all French accounts"; both are read as
+  part of the one-row session lookup that already exists.
+
+The zone is a **frame**, not a re-derivation. It answers "which calendar day is
+today" and "what does a 30-day range mean" when the diary itself cannot answer —
+an empty range, or a range with no rows in it. Rows keep the offset they were
+written with, so changing a zone (or moving house) never moves a stored day,
+hour bucket or lag window. Re-deriving last March from tonight's zone would
+redraw the insights without anyone touching the data, which is the one thing this
+app is supposed to make hard.
+
+
 ## What follows a session: no join in SQL
 
 The card used to be one range join:
@@ -161,7 +189,7 @@ CREATE INDEX idx_email_verif_user ON email_verifications(user_id, purpose, expir
 - `used_at_utc` makes a link single use; an already-used link is a `410`, not a
   silent success.
 - Requesting a new link **expires** the outstanding rows instead of deleting
-  them, so the per-hour send budget (`SYPHYSIO_EMAIL_SENDS_PER_HOUR`) cannot be
+  them, so the per-hour send budget (`SYMPHYSIO_EMAIL_SENDS_PER_HOUR`) cannot be
   dodged by asking for resends, and two inboxes never hold two live links.
 - `is_verified` defaults to **1** so accounts created before the feature exist
   stay usable; `register` writes an explicit 0 when email is configured.

@@ -30,7 +30,7 @@ the in-app reminder banner. 21 tests in `tests/test_email_verification.py`.
   free, which is the obvious way to turn a confirmation email into a spam
   cannon.
 - Two dev transports exist that the sketch did not mention:
-  `SYPHYSIO_MAIL_BACKEND=outbox` (in-memory list plus a readable `.eml` file
+  `SYMPHYSIO_MAIL_BACKEND=outbox` (in-memory list plus a readable `.eml` file
   under `<data dir>/outbox`, never sends) and `null` (drops it). Tests use
   `outbox`.
 - Hard-gate login answers `403` **and queues a new link in the same response**.
@@ -100,7 +100,7 @@ mean a misconfigured SMTP lock a person out of their own recovery diary, which i
 the opposite of what this app is for.
 
 ```
-SYPHYSIO_EMAIL_CONFIRMATION=optional   # off | optional | required
+SYMPHYSIO_EMAIL_CONFIRMATION=optional   # off | optional | required
 ```
 
 Deployments with no email configured at all (`RESEND_API_KEY` unset) stay in
@@ -141,13 +141,13 @@ documented in DEPLOYING.md).
 
 ```
 RESEND_API_KEY=re_xxx                 # unset ⇒ email disabled, app still works
-SYPHYSIO_EMAIL_FROM=Symphysio <confirm@yourdomain>   # domain must be verified in Resend
-SYPHYSIO_EMAIL_REPLY_TO=              # optional
-SYPHYSIO_PUBLIC_URL=https://symphysio.example.com    # absolute link in the email
-SYPHYSIO_EMAIL_CONFIRMATION=optional
+SYMPHYSIO_EMAIL_FROM=Symphysio <confirm@yourdomain>   # domain must be verified in Resend
+SYMPHYSIO_EMAIL_REPLY_TO=              # optional
+SYMPHYSIO_PUBLIC_URL=https://symphysio.example.com    # absolute link in the email
+SYMPHYSIO_EMAIL_CONFIRMATION=optional
 ```
 
-`SYPHYSIO_PUBLIC_URL` is required when email is on: a relative link is useless,
+`SYMPHYSIO_PUBLIC_URL` is required when email is on: a relative link is useless,
 and guessing the host from `Host:` invites a phishable link. Domain DKIM/SPF must
 be set in Resend before mail stops landing in spam — that is a deployment step,
 recorded in DEPLOYING.md when this lands.
