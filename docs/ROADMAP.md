@@ -5,6 +5,12 @@ the schema and the failure modes, not the API call, and the sketch is where they
 are written down. Current behaviour of built items lives in `API.md`,
 `DATABASE.md`, `SECURITY.md` and `DEPLOYING.md`.
 
+The plan for what comes next — insights a user can actually trust, and the
+preset profiles offered at sign-up — is
+[INSIGHTS_PLAN.md](INSIGHTS_PLAN.md). It starts with a measurement showing that
+the lag panel shipped in 0.1.x reports noise, so read §1.1 of it before touching
+`analytics.py`.
+
 ---
 
 ## 1. Email confirmation via Resend — built
@@ -176,12 +182,20 @@ same reason.
 
 ---
 
-## 2. Password reset (next)
+## 2. Password reset — built
 
-Same table, `purpose = 'password_reset'`, 30-minute tokens, and a rule that the
-reset link logs the old sessions out. The plumbing shipped with item 1, so this
-is now the shortest path: a new purpose, a "forgotten password" route on the
-auth screen, and a session-revoking write.
+**Built as:** `POST /auth/password-reset/request` and
+`/auth/password-reset/confirm`, `purpose = 'password_reset'` rows in the existing
+`tokens` table, a "Forgotten password?" link on the sign-in card and a
+`/reset` SPA route. 11 tests in `tests/test_password_reset.py`.
+
+Two decisions the sketch did not settle:
+
+- The link carries the token in the **URL fragment**, not the query string, so it
+  never reaches a proxy access log or a `Referer` header.
+- A weak new password is rejected **before** the token is spent, so a typo in the
+  password box does not burn a one-use link. Confirming revokes every session for
+  the account: whoever asked for the reset is assumed to have lost the device.
 
 ## 3. WebAuthn passkeys
 

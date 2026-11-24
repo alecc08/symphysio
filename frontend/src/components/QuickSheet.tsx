@@ -24,6 +24,10 @@ import { CloseIcon, PlusIcon } from "./icons/Ui";
 
 export type SheetKind = "physio" | "symptoms" | "relief" | "triggers";
 
+/** The drawer's starting severity. Loudly labelled in the UI, and stored as
+ *  `severity_default = 1` on the row, so it never quietly becomes a measurement. */
+const DEFAULT_SEVERITY = 5;
+
 const SHEET_META: Record<
   SheetKind,
   { title: string; subtitle: string; tone: "physio" | "symptom" | "relief" | "trigger"; kind: CatalogKind }
@@ -83,6 +87,8 @@ export function QuickSheet({
   const [pain, setPain] = useState<number | null>(null);
   const [intensity, setIntensity] = useState<number | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  // What a tile tap means in the Physio drawer: did it, or did not do it.
+  const [skipped, setSkipped] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -102,6 +108,16 @@ export function QuickSheet({
       kind === "relief" ? item.category === "relief" : item.category === "trigger",
     );
   }, [kind, catalog]);
+
+  // The most recent symptom entry's number, offered back as one tap. Named in the
+  // chip, because "last time" across several symptoms is otherwise a guess.
+  const rememberedSeverity = useMemo(() => {
+    if (kind !== "symptoms") return null;
+    const recent = catalog.symptoms
+      .filter((item) => item.last_severity != null && item.last_logged_utc != null)
+      .sort((a, b) => (b.last_logged_utc ?? 0) - (a.last_logged_utc ?? 0))[0];
+    return recent ? { value: recent.last_severity as number, name: recent.name } : null;
+  }, [catalog.symptoms, kind]);
 
   const accent = {
     physio: "border-physio/25 bg-physio-soft",
@@ -148,26 +164,36 @@ export function QuickSheet({
         "exercise",
         {
           exercise_id: item.id,
-          effort_rpe: effort,
-          pain_during: pain,
+          // A session you did not do is still a record: it is the difference
+          // between "the programme worked" and "the programme stopped", and the
+          // association maths leaves these out while adherence keeps counting them.
+          sets_done: skipped ? 0 : null,
+          reps_done: skipped ? 0 : null,
+          effort_rpe: skipped ? null : effort,
+          pain_during: skipped ? null : pain,
           occurred_at_utc: at,
         },
-        `Logged: ${item.name}`,
+        skipped ? `Skipped: ${item.name}` : `Logged: ${item.name}`,
       );
       if (ok) onClose();
       return;
     }
     if (kind === "symptoms") {
-      const value = severity ?? 5;
+      // 5 is the drawer's default, not the person's answer, and the row says which
+      // it was: an average that mixes chosen numbers with defaults has to be
+      // honest about it, in history, in the export and in every insight built on it.
+      const chosen = severity !== null;
+      const value = severity ?? DEFAULT_SEVERITY;
       const ok = await log(
         "symptom",
         {
           symptom_id: item.id,
           severity: value,
+          severity_default: !chosen,
           duration_min: durationMin,
           occurred_at_utc: at,
         },
-        `Logged: ${item.name} · ${value}/10`,
+        chosen ? `Logged: ${item.name} · ${value}/10` : `Logged: ${item.name} · 5 (default)`,
       );
       if (ok) onClose();
       return;
@@ -182,19 +208,47 @@ export function QuickSheet({
 
   return (
     <Sheet title={meta.title} subtitle={meta.subtitle} tone={meta.tone} onClose={onClose}>
-      {kind === "symptoms" ? <SeverityScale value={severity} onChange={setSeverity} /> : null}
+      {kind === "symptoms" ? (
+        <SeverityScale
+          value={severity ?? DEFAULT_SEVERITY}
+          onChange={setSeverity}
+          isDefault={severity === null}
+          last={rememberedSeverity}
+        />
+      ) : null}
       {kind === "symptoms" ? <DurationChips value={durationMin} onChange={setDurationMin} /> : null}
 
       {kind === "physio" ? (
         <div className="mt-1">
-          <button
-            type="button"
-            onClick={() => setShowDetails((open) => !open)}
-            aria-expanded={showDetails}
-            className="text-sm font-semibold text-muted underline decoration-dotted"
-          >
-            {showDetails ? "Hide effort & pain" : "Add effort / pain (optional)"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDetails((open) => !open)}
+              aria-expanded={showDetails}
+              className="text-sm font-semibold text-muted underline decoration-dotted"
+            >
+              {showDetails ? "Hide effort & pain" : "Add effort / pain (optional)"}
+            </button>
+            {/* One control that changes what a tile tap means, rather than a second
+                set of tiles: skipping is the common case, and it should not need a
+                different place in the UI to be honest about it. */}
+            <button
+              type="button"
+              onClick={() => setSkipped((on) => !on)}
+              aria-pressed={skipped}
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                skipped ? "border-trigger bg-trigger text-white" : "border-line text-muted"
+              }`}
+            >
+              Did not do it today
+            </button>
+          </div>
+          {skipped ? (
+            <p className="mt-2 text-xs leading-snug text-muted">
+              Tapping an exercise will log it as skipped — it still counts as keeping
+              track, and it is left out of the “what follows a session” maths.
+            </p>
+          ) : null}
           {showDetails ? (
             <>
               <SeverityScale value={effort} onChange={setEffort} label="Effort (RPE)" />

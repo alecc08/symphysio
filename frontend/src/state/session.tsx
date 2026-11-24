@@ -18,7 +18,7 @@ interface SessionValue {
   ready: boolean;
   busy: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, profile?: string) => Promise<void>;
   logout: () => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -57,10 +57,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setBusy(false);
         }
       },
-      register: async (email, password) => {
+      register: async (email, password, profile) => {
         setBusy(true);
         try {
-          const { user: who } = await api.register(email, password);
+          // `profile` is sent explicitly whenever the caller offers one: the API
+          // default is the postnatal set for old clients, while the sign-up card
+          // starts on "Start empty". The two only agree because the SPA is explicit.
+          const { user: who } = await api.register(email, password, profile);
           setUser(who);
         } finally {
           setBusy(false);

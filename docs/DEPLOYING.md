@@ -241,8 +241,10 @@ docker compose ps                                        # healthy
 docker compose logs --since 5m | grep -i error
 ```
 
-Then in a phone browser: register → log two exercises with a `-1h` chip → Undo
-one → check Insights shows the lag panel and the daily bars.
+Then in a phone browser: register (pick a tracking profile) → log two exercises
+with a `-1h` chip → Undo one → check Insights shows the "what follows a session?"
+card, the daily bars and the adherence line, and that History shows the plan
+event you added.
 
 ## PWA notes
 

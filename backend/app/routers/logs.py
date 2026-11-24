@@ -43,8 +43,8 @@ SELECT_LOG = {
         " occurred_at_utc FROM exercise_logs WHERE id = ? AND user_id = ?"
     ),
     "symptom": (
-        "SELECT body_region, severity, duration_min, note, occurred_at_utc FROM symptom_logs"
-        " WHERE id = ? AND user_id = ?"
+        "SELECT body_region, severity, duration_min, note, occurred_at_utc, severity_default"
+        " FROM symptom_logs WHERE id = ? AND user_id = ?"
     ),
     "context": (
         "SELECT intensity, note, occurred_at_utc FROM context_logs WHERE id = ? AND user_id = ?"
@@ -58,7 +58,7 @@ UPDATE_LOG = {
     ),
     "symptom": (
         "UPDATE symptom_logs SET body_region = ?, severity = ?, duration_min = ?, note = ?,"
-        " occurred_at_utc = ? WHERE id = ? AND user_id = ?"
+        " occurred_at_utc = ?, severity_default = ? WHERE id = ? AND user_id = ?"
     ),
     "context": (
         "UPDATE context_logs SET intensity = ?, note = ?, occurred_at_utc = ?"
@@ -76,7 +76,14 @@ EDIT_COLUMNS = {
         "note",
         "occurred_at_utc",
     ),
-    "symptom": ("body_region", "severity", "duration_min", "note", "occurred_at_utc"),
+    "symptom": (
+        "body_region",
+        "severity",
+        "duration_min",
+        "note",
+        "occurred_at_utc",
+        "severity_default",
+    ),
     "context": ("intensity", "note", "occurred_at_utc"),
 }
 
@@ -88,8 +95,8 @@ INSERTS = {
     ),
     "symptom": (
         "INSERT INTO symptom_logs (id, user_id, symptom_id, body_region, occurred_at_utc,"
-        " logged_at_utc, tz_offset_min, severity, duration_min, note)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        " logged_at_utc, tz_offset_min, severity, duration_min, note, severity_default)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ),
     "context": (
         "INSERT INTO context_logs (id, user_id, context_id, occurred_at_utc, logged_at_utc,"
@@ -192,6 +199,7 @@ async def log_symptom(payload: SymptomLogCreate, user: AuthedUser, db: DbDep) ->
             payload.severity,
             payload.duration_min,
             payload.note,
+            int(payload.severity_default),
         ),
     )
     return _created(log_id, "symptom")
@@ -223,7 +231,7 @@ SELECT v.id, v.event_type, v.def_id, v.occurred_at_utc, v.tz_offset_min, v.prima
        COALESCE(ed.name, sd.name, cd.name) AS definition_name,
        COALESCE(el.logged_at_utc, sl.logged_at_utc, cl.logged_at_utc) AS logged_at_utc,
        el.sets_done, el.reps_done, el.duration_sec, el.pain_during,
-       sl.body_region, sl.severity, sl.duration_min,
+       sl.body_region, sl.severity, sl.duration_min, sl.severity_default,
        cd.category, cl.intensity
 FROM v_unified_timeline v
 LEFT JOIN exercise_definitions ed ON ed.id = v.def_id AND ed.user_id = v.user_id
@@ -297,6 +305,10 @@ async def patch_log(
     if found is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log entry not found")
     merged = {**found, **payload.model_dump(exclude_unset=True)}
+    if event_type == "symptom" and "severity" in payload.model_dump(exclude_unset=True):
+        # A hand-edited number is a chosen number. History edits are exactly how a
+        # default becomes a measurement, so the flag clears here and nowhere else.
+        merged["severity_default"] = 0
     await db.execute(
         UPDATE_LOG[event_type],
         [merged[column] for column in columns] + [log_id, user["id"]],

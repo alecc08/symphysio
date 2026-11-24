@@ -25,10 +25,18 @@ export function SeverityScale({
   value,
   onChange,
   label = "Severity",
+  isDefault = false,
+  last,
 }: {
   value: number | null;
   onChange: (value: number) => void;
   label?: string;
+  /** True when `value` is the drawer's default rather than a number the person
+   *  chose. The number on the row is then labelled, not left to look like a
+   *  measurement — an average of defaults is not a measurement. */
+  isDefault?: boolean;
+  /** `{ value, name }` from the last time this was logged, offered as one tap. */
+  last?: { value: number; name: string } | null;
 }) {
   return (
     <div className="mt-4">
@@ -36,6 +44,21 @@ export function SeverityScale({
         <span>{label}</span>
         <span>{value ? `${value}/10 · ${WORDS[value]}` : "tap a number"}</span>
       </div>
+      {isDefault ? (
+        <p className="mt-1 text-xs leading-snug text-faint">
+          5 is the default, not your answer. Tap the number that fits — entries logged
+          on the default are marked in your history.
+        </p>
+      ) : null}
+      {last && last.value !== value ? (
+        <button
+          type="button"
+          onClick={() => onChange(last.value)}
+          className="mt-2 rounded-full border border-line bg-canvas px-3 py-1.5 text-xs font-bold text-muted"
+        >
+          Like last time: {last.value}/10 {last.name}
+        </button>
+      ) : null}
       {/* 5 x 2, not one row of ten: at 390 px a single row gives ~30 px-wide
           targets, and this is the control people hit with a thumb mid-flare. */}
       <div className="mt-2 grid grid-cols-5 gap-1.5">
@@ -48,7 +71,10 @@ export function SeverityScale({
             aria-pressed={value === number}
             className={`h-11 rounded-lg border text-base font-bold tabular-nums transition-transform ${
               value === number
-                ? `${toneFor(number)} border-2 scale-105`
+                ? // A default left sitting on the scale is not an answer the person
+                  // gave, so it is drawn with a dashed edge: the row still shows 5,
+                  // but it never looks like a chosen number.
+                  `${toneFor(number)} border-2 scale-105 ${isDefault ? "border-dashed" : ""}`
                 : "border-line bg-canvas text-muted"
             }`}
           >

@@ -20,14 +20,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ..db import Database
 from ..deps import AuthedUser, get_db
 from ..ids import new_id
+from ..profiles import PROFILES
 from ..schemas import (
     ContextDefinitionCreate,
     ContextDefinitionUpdate,
     ExerciseDefinitionCreate,
     ExerciseDefinitionUpdate,
+    ProfileOut,
     ReorderRequest,
     SymptomDefinitionCreate,
     SymptomDefinitionUpdate,
+    WindowOut,
 )
 from ..seed import suggestions
 
@@ -40,7 +43,7 @@ KINDS: dict[str, dict[str, Any]] = {
         "table": "exercise_definitions",
         "select_cols": (
             "id, name, body_region, default_sets, default_reps, default_sec, icon_key,"
-            " is_archived, sort_order"
+            " is_archived, sort_order, profile_key"
         ),
         "create_cols": (
             "name",
@@ -66,8 +69,22 @@ KINDS: dict[str, dict[str, Any]] = {
     },
     "symptoms": {
         "table": "symptom_definitions",
+        # `last_severity` / `last_logged_utc` are the number this person last chose
+        # for this symptom and when, so the drawer can offer that number back with
+        # its name attached instead of silently logging another default 5. Scalar
+        # subqueries on purpose: the (user_id, symptom_id, occurred_at_utc DESC)
+        # index from 001 makes each one a single seek, at diary-sized catalogs.
         "select_cols": (
-            "id, name, default_region AS body_region, icon_key, is_archived, sort_order"
+            "id, name, default_region AS body_region, icon_key, is_archived, sort_order,"
+            " profile_key,"
+            " (SELECT severity FROM symptom_logs sl"
+            "  WHERE sl.user_id = symptom_definitions.user_id"
+            "   AND sl.symptom_id = symptom_definitions.id"
+            "  ORDER BY sl.occurred_at_utc DESC LIMIT 1) AS last_severity,"
+            " (SELECT occurred_at_utc FROM symptom_logs sl"
+            "  WHERE sl.user_id = symptom_definitions.user_id"
+            "   AND sl.symptom_id = symptom_definitions.id"
+            "  ORDER BY sl.occurred_at_utc DESC LIMIT 1) AS last_logged_utc"
         ),
         "create_cols": ("name", "default_region", "icon_key", "sort_order"),
         "update_cols": ("name", "default_region", "icon_key", "is_archived", "sort_order"),
@@ -76,7 +93,7 @@ KINDS: dict[str, dict[str, Any]] = {
     },
     "contexts": {
         "table": "context_definitions",
-        "select_cols": "id, name, category, icon_key, is_archived, sort_order",
+        "select_cols": "id, name, category, icon_key, is_archived, sort_order, profile_key",
         "create_cols": ("category", "name", "icon_key", "sort_order"),
         "update_cols": ("name", "icon_key", "is_archived", "sort_order"),
         "create_model": ContextDefinitionCreate,
@@ -193,6 +210,31 @@ async def _reorder(db: Database, user_id: str, cfg: dict[str, Any], ids: list[st
 async def _existing_names(db: Database, user_id: str, table: str) -> set[str]:
     rows = await db.rows(f"SELECT name FROM {table} WHERE user_id = ?", (user_id,))
     return {str(row["name"]) for row in rows}
+
+
+@router.get("/profiles", response_model=list[ProfileOut])
+async def list_profiles() -> list[ProfileOut]:
+    """The starting sets offered at sign-up. Public on purpose.
+
+    The picker lives on the sign-up card, so there is no session yet to authorise
+    with — and the payload is the same for everyone: names, counts and lag
+    windows, never any account data. Ordered as the picker should show them, with
+    "Start empty" first.
+    """
+    return [
+        ProfileOut(
+            key=profile.key,
+            label=profile.label,
+            blurb=profile.blurb,
+            counts=profile.counts,
+            windows=[
+                WindowOut(label=label, min_hours=low, max_hours=high)
+                for label, low, high in sorted(profile.windows, key=lambda row: (row[1], row[2]))
+            ],
+            default_window=profile.default_window,
+        )
+        for profile in PROFILES.values()
+    ]
 
 
 @router.get("/exercises")

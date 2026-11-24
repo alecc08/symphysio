@@ -86,7 +86,7 @@ async def authenticate(db: Database, settings: Settings, token: str | None) -> A
         return None
     digest = token_digest(token)
     row = await db.row(
-        "SELECT s.expires_at_utc, u.id, u.email, u.created_at_utc, u.is_verified"
+        "SELECT s.expires_at_utc, u.id, u.email, u.created_at_utc, u.is_verified, u.profile_key"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ? AND s.expires_at_utc > ?",
         (digest, now_utc()),
@@ -108,6 +108,10 @@ async def authenticate(db: Database, settings: Settings, token: str | None) -> A
         "email": row["email"],
         "created_at_utc": row["created_at_utc"],
         "is_verified": bool(row["is_verified"]),
+        # The set this account started from. Cheap to carry (the join already
+        # touches users) and it is what makes the insights copy say "your
+        # postnatal set" instead of guessing from row counts.
+        "profile_key": str(row["profile_key"]),
     }
     return Authenticated(user=user, token=token, expires_at_utc=expires_at, renewed=renewed)
 

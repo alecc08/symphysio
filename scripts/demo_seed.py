@@ -2,11 +2,12 @@
 
 Point it at a throwaway instance and it fills three weeks of data with a shape on
 purpose: practice is steady, load events (the car seat, carrying the baby) cluster
-on certain days, and "Heaviness / Dragging" tends to arrive 2-5 hours after one of
-those — so the lag panel has something real to find and severity trends gently
+on certain days, and "Heaviness / Dragging" arrives 2-5 hours after a *Heavy
+Lifting* day far more often than on a day without one — so the "what follows a
+session" card has something genuinely there to find, and severity trends gently
 downward. The README and docs/media screenshots came from exactly this seed.
 
-    SYPHYSIO_DATA_DIR=$(mktemp -d) SYPHYSIO_MAIL_BACKEND=null \
+    SYPHYSIO_DATA_DIR=$HOME/scratch/sypdemo SYPHYSIO_MAIL_BACKEND=null \
       SYPHYSIO_COOKIE_SECURE=0 uv run uvicorn app.main:app --port 8011
     python3 scripts/demo_seed.py            # then open http://127.0.0.1:8011
 
@@ -81,11 +82,18 @@ for day in range(24):
     if day % 6 == 0:
         post("/logs/contexts", "context", "Straining", at(day, 7, 40), intensity=5)
 
-    # symptoms, mostly 2-5 h after a load event, easing as the weeks go on
-    chance = [0.9, 0.8, 0.6, 0.4][min(week, 3)]
+    # symptoms. "Heaviness / Dragging" mostly follows a Heavy Lifting day, 2-5 h
+    # later, and only rarely shows up on a day without one — that difference is
+    # real *in this data*, which is what lets the association card call it
+    # `worth a look`. The same maths stays silent on the independent diaries in
+    # tests/test_insights_null.py, so the demo proves the finding without the
+    # card having been rigged to always say yes.
+    lifting_today = day % 3 == 1
+    chance = ([0.85, 0.8, 0.7, 0.6][min(week, 3)] if lifting_today else 0.15)
     if random.random() < chance:
         lag = random.randint(2, 5)
-        post("/logs/symptoms", "symptom", "Heaviness / Dragging", at(day, 15 + lag // 2, 30),
+        hour = 15 if lifting_today else random.choice([9, 12, 19])
+        post("/logs/symptoms", "symptom", "Heaviness / Dragging", at(day, hour + lag // 2, 30),
              severity=random.choice([4, 5, 5, 6]) - week // 2, body_region="low pelvis",
              duration_min=random.choice([30, 60, 120]))
     if day % 4 == 1 and week < 3:
@@ -108,6 +116,26 @@ for day in range(24):
              note="checked the draw-in, told to stop holding my breath")
     if day % 5 == 2:
         post("/logs/contexts", "context", "Belly Support", at(day, 9, 30), intensity=4)
+
+# The appointment layer and the two honest labels, so a fresh demo install has
+# something to show for them: a physio review that explains the change in shape,
+# a session that was not done, and one severity that was left on the default.
+for path, text, when in (
+    ("/plan-events", "Physio review — programme changed to 3x/week", at(9, 10, 30)),
+    ("/plan-events", "Started the taper after two good weeks", at(2, 18, 0)),
+):
+    response = client.post(
+        path,
+        json={"kind": "appointment" if "review" in text else "programme_change",
+              "text": text, "occurred_at_utc": when, "tz_offset_min": -240},
+        headers={"X-CSRF-Token": client.cookies.get("symphysio_csrf", "")},
+    )
+    assert response.status_code == 201, (text, response.text)
+
+post("/logs/exercises", "exercise", "Glute Bridge", at(1, 8, 0),
+     sets_done=0, reps_done=0)
+post("/logs/symptoms", "symptom", "Urine Leak", at(0, 9, 20),
+     severity=5, severity_default=True)
 
 for path in ("/catalog/exercises", "/catalog/symptoms", "/catalog/contexts"):
     kind = path.split("/")[-1]

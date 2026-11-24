@@ -181,7 +181,7 @@ and charts built from divs rather than a charting dependency.
 
 | Sign-in | Insights |
 | --- | --- |
-| ![Sign-in screen with the brand mark](media/sign-in.png) | ![Insights: counts, severity trend and the lag panel](media/insights.png) |
+| ![Sign-in screen with the brand mark](media/sign-in.png) | ![Insights: counts, adherence and the association card](media/insights.png) |
 
 ## Accessibility
 

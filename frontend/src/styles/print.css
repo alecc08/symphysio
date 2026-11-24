@@ -1,0 +1,73 @@
+/* Print: the physio report.
+
+There is no separate report page and no PDF endpoint — the Insights page *is* the
+report, and this stylesheet is what makes it printable for an appointment: the
+navigation, chips and buttons disappear, the palette is forced light (someone in
+dark mode still gets readable paper), cards avoid being split across pages, and
+the header line that only makes sense on paper appears.
+
+Anything marked `.screen-only` is chrome; anything marked `.print-only` exists for
+the printout and is hidden on screen.
+*/
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  :root {
+    /* Paper is light. Do not inherit the dark palette just because the phone is. */
+    --color-canvas: #ffffff;
+    --color-card: #ffffff;
+    --color-ink: #10151f;
+    --color-muted: #4b5768;
+    --color-line: #c9d1dd;
+    --color-physio-ink: #0f5f5a;
+    --color-symptom-ink: #8f1d33;
+    --color-relief-ink: #26307a;
+    --color-trigger-ink: #6b4a10;
+  }
+
+  html,
+  body {
+    background: #fff;
+    color: var(--color-ink);
+  }
+
+  nav,
+  button,
+  input,
+  textarea,
+  select,
+  .screen-only {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  .app-shell {
+    padding: 0;
+  }
+
+  .print-report {
+    padding: 0 !important;
+    max-width: none;
+  }
+
+  /* A card split across two pages makes the numbers hard to read aloud in an
+     appointment, which is the whole use case. */
+  section,
+  li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  /* Bars and verdict chips carry meaning by colour; keep the ink. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

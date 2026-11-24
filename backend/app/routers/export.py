@@ -42,9 +42,19 @@ CSV_COLUMNS = (
     "intensity",
     "body_region",
     "category",
+    # Written, not chosen: 1 when the severity on that row is the drawer's default
+    # rather than a number the person picked. A physio reading the CSV has to be
+    # able to tell those apart, and the file has to be explainable without this
+    # repository next to it.
+    "severity_default",
     "note",
 )
 METRIC_NAMES = {"exercise": "effort_rpe", "symptom": "severity", "context": "intensity"}
+
+# Static text, never built from request data: only the `?`-placeholder WHERE clauses move.
+PLAN_FEED_SELECT = (
+    "SELECT id, kind, text, occurred_at_utc, logged_at_utc, tz_offset_min FROM plan_events"
+)
 
 
 def _iso(value: int | None) -> str:
@@ -81,6 +91,24 @@ async def _rows(db: Database, user_id: str, since: int | None, until: int | None
     return await db.rows(sql, params)
 
 
+async def _plan_rows(
+    db: Database, user_id: str, since: int | None, until: int | None
+) -> list[dict[str, Any]]:
+    """Plan events in the same date window as the log rows, for the CSV feed."""
+    where = ["user_id = ?"]
+    params: list[Any] = [user_id]
+    if since is not None:
+        where.append("occurred_at_utc >= ?")
+        params.append(since)
+    if until is not None:
+        where.append("occurred_at_utc <= ?")
+        params.append(until)
+    sql = (
+        PLAN_FEED_SELECT + " WHERE " + " AND ".join(where) + " ORDER BY occurred_at_utc DESC"
+    )
+    return await db.rows(sql, params)
+
+
 def _filename(stem: str, suffix: str) -> str:
     return f"symphysio-{stem}-{datetime.now(UTC).strftime('%Y%m%d')}.{suffix}"
 
@@ -109,7 +137,43 @@ def _csv_row(row: dict[str, Any]) -> list[str]:
         _safe(row["intensity"]),
         _safe(row["body_region"]),
         _safe(row["category"]),
+        _safe(row["severity_default"]),
         _safe(row["note"]),
+    ]
+
+
+def _plan_csv_row(row: dict[str, Any]) -> list[str]:
+    """A plan event in the same flat time-series, mapped onto existing columns.
+
+    `definition` and `category` carry the plan kind and `note` carries the text,
+    rather than adding two always-empty columns: whoever opens this in a
+    spreadsheet gets one table to sort by date, and docs/API.md states the
+    mapping so the file explains itself without this repository next to it.
+    """
+    local = int(row["occurred_at_utc"]) + int(row["tz_offset_min"] or 0) * 60
+    return [
+        _safe("plan"),
+        _safe(row["id"]),
+        _safe(row["kind"]),
+        "",
+        _safe(row["occurred_at_utc"]),
+        _safe(_iso(row["occurred_at_utc"])),
+        _safe(_iso(local)),
+        _safe(row["tz_offset_min"]),
+        _safe(row["logged_at_utc"]),
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        _safe(row["kind"]),
+        "",
+        _safe(row["text"]),
     ]
 
 
@@ -121,11 +185,16 @@ async def export_csv(
     to: Annotated[int | None, Query(ge=0)] = None,
 ) -> Response:
     rows = await _rows(db, user["id"], from_, to)
+    plans = await _plan_rows(db, user["id"], from_, to)
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(CSV_COLUMNS)
-    for row in rows:
-        writer.writerow(_csv_row(row))
+    # One chronological table, not two sections: a clinician sorts it by date and
+    # sees "she changed the programme" between the symptom rows that stepped.
+    merged = [{**row, "event_type": "plan"} for row in plans] + list(rows)
+    merged.sort(key=lambda item: (int(item["occurred_at_utc"]), str(item["id"])), reverse=True)
+    for row in merged:
+        writer.writerow(_plan_csv_row(row) if row["event_type"] == "plan" else _csv_row(row))
     return Response(
         content=buffer.getvalue(),
         media_type="text/csv; charset=utf-8",
@@ -171,10 +240,22 @@ async def export_json(
     }
     return {
         "app": "symphysio",
-        "schema_version": 1,
+        # 2 = plan_events and severity_default joined the dump. Anything reading
+        # these files should be able to tell which shape it has.
+        "schema_version": 2,
         "exported_at_utc": now_utc(),
-        "user": {"id": user_id, "email": user["email"]},
+        "user": {
+            "id": user_id,
+            "email": user["email"],
+            "profile_key": user.get("profile_key"),
+        },
         "definitions": definitions,
         "logs": logs,
+        # Not a log type: the appointment/programme-change layer that explains a
+        # trend step. Kept separate for the same reason it is out of the view.
+        "plan_events": await db.rows(
+            "SELECT * FROM plan_events WHERE user_id = ? ORDER BY occurred_at_utc DESC",
+            (user_id,),
+        ),
         "timeline": await _rows(db, user_id, from_, to),
     }

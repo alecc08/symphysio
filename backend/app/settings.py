@@ -50,6 +50,7 @@ class Settings:
     public_url: str | None
     email_verification_ttl_seconds: int
     email_sends_per_hour: int
+    password_reset_ttl_seconds: int
     email_confirmation: str  # "off" | "optional" | "required"
     allow_registration: bool = True  # keyword default: see get_settings
     trusted_proxies: tuple[str, ...] = ()  # CIDRs of *your* proxy, never a client
@@ -170,6 +171,10 @@ def get_settings() -> Settings:
         public_url=public_url,
         email_verification_ttl_seconds=max(300, _env_int("SYPHYSIO_EMAIL_TTL_SECONDS", 86_400)),
         email_sends_per_hour=max(1, _env_int("SYPHYSIO_EMAIL_SENDS_PER_HOUR", 3)),
+        # Reset links are short-lived by design: they hand over the ability to set
+        # a new password, and unlike a confirmation link there is no "you can keep
+        # using the app meanwhile" to fall back on if one leaks.
+        password_reset_ttl_seconds=max(300, _env_int("SYPHYSIO_PASSWORD_RESET_TTL_SECONDS", 1800)),
         email_confirmation=_email_confirmation_mode(),
         # Open by default: the first account has to come from somewhere. A
         # instance that is reachable from the internet should close this once

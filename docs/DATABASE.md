@@ -56,7 +56,9 @@ timezone name would have been nicer and would have required the client to know
 the tz database; an offset at the moment of the event is enough because nobody
 cares about historical DST for a symptom diary.
 
-## The lag query
+## What follows a session: no join in SQL
+
+The card used to be one range join:
 
 ```sql
 FROM exercise_logs el
@@ -67,16 +69,35 @@ GROUP BY exercise, symptom
 HAVING COUNT(sl.id) >= :min_count
 ```
 
-It is a plain range join, so it needs the right index and nothing exotic:
-`idx_ex_logs_time (user_id, occurred_at_utc DESC)` narrows the exercise side and
-`idx_sym_logs_time (user_id, occurred_at_utc DESC)` narrows the symptom range.
-`min_count` (default 3) keeps a 2-observation "correlation" out of the UI — a
-chart that lies is worse than no chart.
+That answers "does the symptom ever appear after the exercise", which at diary
+sizes is nearly always yes. Measured on seeded **independent** diaries (nothing
+causally linked): 1 spurious pair at 1 log/day, 67 at 3/day, 100 at 8/day — on a
+24-pair card that is a full screen of invented patterns. It was replaced in 0.2.0;
+`GET /analytics/lag-correlations` now 404s and a test asserts that, so nothing
+quietly keeps calling it.
+
+What runs instead (`app/insights/`):
+
+```sql
+SELECT ... FROM exercise_logs  WHERE user_id = ? AND occurred_at_utc >= ?
+UNION ALL ... symptom_logs ...
+UNION ALL ... context_logs ...
+```
+
+One indexed read per kind (`idx_ex_logs_time`, `idx_sym_logs_time`,
+`idx_ctx_logs_time` — all `(user_id, occurred_at_utc DESC)`), then the pairing in
+Python: each session is compared with **matched** control windows at the same
+hour-of-day on days without that exposure, and a pair is only printed when the
+Wilson interval of the exposed rate sits entirely above the control's. The maths
+is in `association.py`; `scripts/probes/lag_null.py` re-runs the comparison on
+independent data and fails if the new code ever claims a pattern there.
 
 The window (`min_hr`, `max_hr`) is a parameter, not a hard-coded 24 h, because
 pelvic-floor response lag is genuinely individual: leaking after a heavy lift
 shows up in minutes, girdle-pain flares after a long day show up the next
-morning.
+morning. It is no longer free-form: the choices come from the account's tracking
+profile, because letting someone slide a window until a pattern appears is how a
+chart lies.
 
 ## Definitions are archived, never deleted
 

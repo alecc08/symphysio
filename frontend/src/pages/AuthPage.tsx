@@ -2,8 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 
-import { ApiError } from "../api/client";
+import { ApiError, api } from "../api/client";
 import { BrandMark } from "../components/icons/Tile";
+import { ProfilePicker } from "../components/ProfilePicker";
 import { useSession } from "../state/session";
 
 const MIN_PASSWORD = 12;
@@ -14,8 +15,29 @@ export function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [resetState, setResetState] = useState<"idle" | "busy" | "sent">("idle");
+  // "Start empty" is the default here on purpose; the API's own default is the
+  // postnatal set for clients that predate the field, and the SPA never relies on
+  // that (it always sends a profile).
+  const [profile, setProfile] = useState("none");
 
   const tooShort = mode === "register" && password.length > 0 && password.length < MIN_PASSWORD;
+
+  async function sendReset() {
+    setError(null);
+    setResetState("busy");
+    try {
+      await api.requestPasswordReset(email);
+      setResetState("sent");
+    } catch (caught) {
+      setResetState("idle");
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Could not reach the server. Try again in a moment.",
+      );
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -25,7 +47,7 @@ export function AuthPage() {
       return;
     }
     try {
-      if (mode === "register") await session.register(email, password);
+      if (mode === "register") await session.register(email, password, profile);
       else await session.login(email, password);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Something went wrong. Try again.");
@@ -56,6 +78,7 @@ export function AuthPage() {
               onClick={() => {
                 setMode(value);
                 setError(null);
+                setResetState("idle");
               }}
               aria-pressed={mode === value}
               className={`rounded-lg py-2 text-sm font-bold ${
@@ -66,6 +89,8 @@ export function AuthPage() {
             </button>
           ))}
         </div>
+
+        {mode === "register" ? <ProfilePicker value={profile} onChange={setProfile} /> : null}
 
         <label className="block text-sm font-semibold" htmlFor="email">
           Email
@@ -121,6 +146,27 @@ export function AuthPage() {
               ? "Create account & start logging"
               : "Log in"}
         </button>
+
+        {mode === "login" ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => void sendReset()}
+              disabled={!email.includes("@") || resetState === "busy" || session.busy}
+              className="w-full rounded-xl border border-line bg-canvas py-3 text-sm font-bold text-muted disabled:opacity-50"
+            >
+              {resetState === "busy" ? "Sending link…" : "Forgotten password?"}
+            </button>
+            {resetState === "sent" ? (
+              /* Deliberately vague, and the server is vague back: whether the
+                 address exists is not something this screen can know. */
+              <p className="mt-2 text-xs text-muted">
+                If that address has an account, a reset link is on its way. It works for 30
+                minutes, once, and changes nothing until it is opened.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </form>
 
       <p className="mt-4 text-center text-xs text-muted">

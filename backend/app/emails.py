@@ -69,4 +69,60 @@ def confirmation_message(settings: Settings, to: str, token: str) -> Message:
     return Message(to=to, subject=SUBJECT, text=text, html=html)
 
 
-__all__ = ["SUBJECT", "confirmation_message", "verification_link"]
+RESET_SUBJECT = "Reset your Symphysio password"
+
+
+def reset_link(settings: Settings, token: str) -> str:
+    """Same fragment discipline as the confirmation link: no access log sees it."""
+    if settings.public_url is None:  # guarded by Settings.email_enabled
+        raise RuntimeError("SYPHYSIO_PUBLIC_URL is required to build a password reset link")
+    return f"{settings.public_url}/reset#token={token}"
+
+
+def password_reset_message(settings: Settings, to: str, token: str) -> Message:
+    """The reset mail. Deliberately says nothing about what the account contains."""
+    link = reset_link(settings, token)
+    minutes = max(1, settings.password_reset_ttl_seconds // 60)
+    text = (
+        "Reset your Symphysio password\n\n"
+        "Open this link and choose a new password. It works for\n"
+        f"{minutes} minute{'s' if minutes != 1 else ''} and can only be used once.\n\n"
+        f"{link}\n\n"
+        "Setting a new password signs every other device out of this account.\n\n"
+        "If you did not ask for this, nothing needs doing: the link expires and\n"
+        "no password changes until someone uses it.\n\n"
+        "Symphysio never sends health information by email.\n"
+    )
+    safe_link = escape(link, quote=True)
+    html = (
+        "<!doctype html><html><body style=\"margin:0;padding:24px;"
+        "font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;"
+        "background:#f8fafc\">"
+        '<div style="max-width:440px;margin:0 auto;padding:24px;background:#fff;'
+        'border:1px solid #e2e8f0;border-radius:16px">'
+        '<p style="margin:0 0 12px;font-size:17px;font-weight:700">Reset your password</p>'
+        "<p style=\"margin:0 0 16px;font-size:15px;line-height:1.5\">Open this link and choose"
+        f" a new password. It works for {minutes} minute{'s' if minutes != 1 else ''} and can"
+        " only be used once.</p>"
+        '<p style="margin:0 0 20px"><a href="' + safe_link + '" style="display:inline-block;'
+        'padding:12px 18px;background:#0d9488;color:#ffffff;text-decoration:none;'
+        'border-radius:12px;font-weight:700">Choose a new password</a></p>'
+        '<p style="margin:0 0 16px;font-size:13px;word-break:break-all;color:#475569">'
+        '<a href="' + safe_link + '" style="color:#475569">' + safe_link + "</a></p>"
+        '<p style="margin:0;font-size:13px;line-height:1.5;color:#64748b">Setting a new'
+        " password signs every other device out. If you did not ask for this, the link"
+        " expires on its own and nothing changes. Symphysio never sends health information"
+        " by email.</p>"
+        "</div></body></html>"
+    )
+    return Message(to=to, subject=RESET_SUBJECT, text=text, html=html)
+
+
+__all__ = [
+    "RESET_SUBJECT",
+    "SUBJECT",
+    "confirmation_message",
+    "password_reset_message",
+    "reset_link",
+    "verification_link",
+]

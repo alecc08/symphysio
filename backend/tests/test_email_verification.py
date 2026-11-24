@@ -306,6 +306,7 @@ def _mailer_settings(**overrides: object) -> Settings:
         "public_url": PUBLIC_URL,
         "email_verification_ttl_seconds": 86_400,
         "email_sends_per_hour": 3,
+        "password_reset_ttl_seconds": 1800,
         "email_confirmation": "optional",
     }
     return Settings(**{**base, **overrides})  # type: ignore[arg-type]
