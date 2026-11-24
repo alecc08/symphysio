@@ -1,18 +1,22 @@
 /* Severity 1-10 pill bar. One tap picks; colours ramp from calm to urgent. */
 
+import type { MessageKey } from "../i18n/en";
+import { useI18n } from "../i18n";
 import { ClockIcon } from "./icons/Ui";
 
-const WORDS: Record<number, string> = {
-  1: "barely there",
-  2: "mild",
-  3: "mild",
-  4: "noticeable",
-  5: "bothersome",
-  6: "bothersome",
-  7: "hard",
-  8: "hard",
-  9: "severe",
-  10: "severe",
+/** Score -> the word a person would use. Keys, not strings: the wording is part
+ *  of the translation, and a score without a word is worse than no word at all. */
+const WORDS: Record<number, MessageKey> = {
+  1: "severity.barely",
+  2: "severity.mild",
+  3: "severity.mild",
+  4: "severity.noticeable",
+  5: "severity.bothersome",
+  6: "severity.bothersome",
+  7: "severity.hard",
+  8: "severity.hard",
+  9: "severity.severe",
+  10: "severity.severe",
 };
 
 function toneFor(value: number): string {
@@ -24,13 +28,13 @@ function toneFor(value: number): string {
 export function SeverityScale({
   value,
   onChange,
-  label = "Severity",
+  labelKey = "severity.label",
   isDefault = false,
   last,
 }: {
   value: number | null;
   onChange: (value: number) => void;
-  label?: string;
+  labelKey?: MessageKey;
   /** True when `value` is the drawer's default rather than a number the person
    *  chose. The number on the row is then labelled, not left to look like a
    *  measurement — an average of defaults is not a measurement. */
@@ -38,17 +42,16 @@ export function SeverityScale({
   /** `{ value, name }` from the last time this was logged, offered as one tap. */
   last?: { value: number; name: string } | null;
 }) {
+  const { t } = useI18n();
+  const label = t(labelKey);
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between text-xs font-semibold text-muted">
         <span>{label}</span>
-        <span>{value ? `${value}/10 · ${WORDS[value]}` : "tap a number"}</span>
+        <span>{value ? `${value}/10 · ${t(WORDS[value])}` : t("severity.tap")}</span>
       </div>
-      {isDefault ? (
-        <p className="mt-1 text-xs leading-snug text-faint">
-          5 is the default, not your answer. Tap the number that fits — entries logged
-          on the default are marked in your history.
-        </p>
+      {isDefault && labelKey === "severity.label" ? (
+        <p className="mt-1 text-xs leading-snug text-faint">{t("severity.defaultNote")}</p>
       ) : null}
       {last && last.value !== value ? (
         <button
@@ -56,7 +59,7 @@ export function SeverityScale({
           onClick={() => onChange(last.value)}
           className="mt-2 rounded-full border border-line bg-canvas px-3 py-1.5 text-xs font-bold text-muted"
         >
-          Like last time: {last.value}/10 {last.name}
+          {t("severity.likeLast", { score: last.value, name: last.name })}
         </button>
       ) : null}
       {/* 5 x 2, not one row of ten: at 390 px a single row gives ~30 px-wide
@@ -67,7 +70,7 @@ export function SeverityScale({
             key={number}
             type="button"
             onClick={() => onChange(number)}
-            aria-label={`${label} ${number} of 10`}
+            aria-label={t("severity.aria", { label, number })}
             aria-pressed={value === number}
             className={`h-11 rounded-lg border text-base font-bold tabular-nums transition-transform ${
               value === number
@@ -94,17 +97,18 @@ export function DurationChips({
   value: number | null;
   onChange: (minutes: number | null) => void;
 }) {
-  const options = [
-    { label: "10m", minutes: 10 },
-    { label: "1h", minutes: 60 },
-    { label: "half day", minutes: 240 },
-    { label: "all day", minutes: 720 },
+  const { t } = useI18n();
+  const options: { label: string; minutes: number }[] = [
+    { label: t("duration.tenMinutes"), minutes: 10 },
+    { label: t("duration.oneHour"), minutes: 60 },
+    { label: t("duration.halfDay"), minutes: 240 },
+    { label: t("duration.allDay"), minutes: 720 },
   ];
   return (
     <div className="mt-4">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
         <ClockIcon className="h-4 w-4" />
-        <span>How long</span>
+        <span>{t("duration.label")}</span>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         {options.map((option) => (

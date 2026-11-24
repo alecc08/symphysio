@@ -12,6 +12,21 @@ export interface User {
   /** The tracking set the account started from; "none" means it started empty.
    *  Provenance only — changing it later rewrites no history. */
   profile_key: string;
+  /** "en" or "fr". The server keeps it because it also decides the language of
+   *  the emails and of its own error messages, which no browser setting reaches. */
+  locale: string;
+  /** IANA zone, or null when this account has never chosen one — which is not the
+   *  same as choosing UTC: it means the instance default applies. */
+  timezone: string | null;
+}
+
+/** GET/PATCH /auth/preferences: what the account holds, and what is in use. */
+export interface Preferences {
+  locale: string;
+  timezone: string | null;
+  effective_timezone: string;
+  /** `UTC-5` today, `UTC-4` in summer: a zone name alone never says which. */
+  utc_offset: string;
 }
 
 export interface AuthResponse {

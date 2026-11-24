@@ -2,8 +2,14 @@
 // assets. API responses are never cached, so a stale number is impossible.
 // Bump the version whenever the shell or the icon set changes: `activate`
 // deletes every other cache, which is how an installed PWA drops old artwork.
-const CACHE = "symphysio-shell-v2";
-const SHELL = ["/", "/offline.html", "/offline.css", "/manifest.webmanifest"];
+const CACHE = "symphysio-shell-v3";
+const SHELL = [
+  "/",
+  "/offline.html",
+  "/offline-i18n.js",
+  "/offline.css",
+  "/manifest.webmanifest",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

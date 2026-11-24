@@ -12,6 +12,7 @@ import {
   TriggerHero,
 } from "../components/icons/Tile";
 import { QuickSheet, type SheetKind } from "../components/QuickSheet";
+import { useI18n } from "../i18n";
 
 interface TileProps {
   label: string;
@@ -44,26 +45,26 @@ function localDayIso(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-function plural(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
-}
-
 /** What the relief/trigger tiles say about themselves.
 
 Hard-coding "Ice, heat, sitz bath, PT" was a postnatal assumption: a hip-and-knee
 or shoulder account gets no sitz bath in its presets, and the tile then advertises
 something the person cannot log. The first few real presets are the honest caption,
-and they follow whatever the person adds or removes. */
+and they follow whatever the person adds or removes.
+
+   The names print as written: they are the person's own rows, and lower-casing
+   them would mangle a French name, which keeps its capital. */
 function presetCaption(rows: { name: string }[], empty: string): string {
   if (rows.length === 0) return empty;
   return rows
     .slice(0, 3)
-    .map((row) => row.name.toLowerCase())
+    .map((row) => row.name)
     .join(", ");
 }
 
 export function LogPage() {
   const catalog = useCatalog();
+  const { t } = useI18n();
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
 
@@ -84,41 +85,42 @@ export function LogPage() {
     <div className="px-4 pb-24 pt-2">
       <header className="mb-4 flex items-baseline justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Log</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">{t("log.title")}</h1>
           <p className="text-sm text-muted">
             {count("exercises") + count("symptoms") + count("contexts") > 0
-              ? `${plural(count("exercises"), "exercise")} · ${plural(
-                  count("symptoms"),
-                  "symptom",
-                )} · ${plural(count("contexts"), "context")} today`
-              : "Nothing logged yet today"}
-            {streak > 1 ? ` · ${streak}-day streak` : ""}
+              ? t("log.todaySummary", {
+                  exercises: count("exercises"),
+                  symptoms: count("symptoms"),
+                  contexts: count("contexts"),
+                })
+              : t("log.nothingToday")}
+            {streak > 1 ? ` · ${t("log.streak", { count: streak })}` : ""}
           </p>
         </div>
       </header>
 
       <div className="grid grid-cols-2 gap-3">
         <Tile
-          label="Physio"
-          caption={`${catalog.exercises.length} presets`}
+          label={t("tile.physio")}
+          caption={t("log.presets", { count: catalog.exercises.length })}
           className="border-physio/25 bg-physio-soft"
           accentClass="text-physio-ink"
           hero={<PhysioHero className="h-11 w-11" />}
           onClick={() => setSheet("physio")}
         />
         <Tile
-          label="Symptoms"
-          caption={`${catalog.symptoms.length} presets`}
+          label={t("tile.symptoms")}
+          caption={t("log.presets", { count: catalog.symptoms.length })}
           className="border-symptom/25 bg-symptom-soft"
           accentClass="text-symptom-ink"
           hero={<SymptomHero className="h-11 w-11" />}
           onClick={() => setSheet("symptoms")}
         />
         <Tile
-          label="Relief / Meds"
+          label={t("tile.relief")}
           caption={presetCaption(
             catalog.contexts.filter((row) => row.category === "relief"),
-            "add your own",
+            t("log.addYourOwn"),
           )}
           className="border-relief/25 bg-relief-soft"
           accentClass="text-relief-ink"
@@ -126,10 +128,10 @@ export function LogPage() {
           onClick={() => setSheet("relief")}
         />
         <Tile
-          label="Triggers"
+          label={t("tile.triggers")}
           caption={presetCaption(
             catalog.contexts.filter((row) => row.category === "trigger"),
-            "add your own",
+            t("log.addYourOwn"),
           )}
           className="border-trigger/25 bg-trigger-soft"
           accentClass="text-trigger-ink"
@@ -139,9 +141,8 @@ export function LogPage() {
       </div>
 
       <p className="mt-5 text-sm leading-relaxed text-muted">
-        One tap opens the drawer, the next tap saves it. Late entry? Use the{" "}
-        <span className="font-semibold text-ink">-1h / -3h</span> chips so the correlation maths
-        stays honest.
+        {t("log.hintBefore")} <span className="font-semibold text-ink">{t("log.hintChips")}</span>{" "}
+        {t("log.hintAfter")}
       </p>
 
       {sheet ? (

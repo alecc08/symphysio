@@ -4,6 +4,7 @@ import { useCallback } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { EventType } from "../api/types";
+import { useI18n } from "../i18n";
 import { useToast } from "../state/toast";
 import { localTzOffsetMin } from "./time";
 
@@ -20,6 +21,7 @@ export interface QuickLogger {
 
 export function useQuickLog(onLogged?: () => void): QuickLogger {
   const toast = useToast();
+  const { t } = useI18n();
 
   const log = useCallback(
     async (event: "exercise" | "symptom" | "context", body: Record<string, unknown>, label: string) => {
@@ -40,13 +42,13 @@ export function useQuickLog(onLogged?: () => void): QuickLogger {
         return true;
       } catch (error) {
         toast.show({
-          label: error instanceof ApiError ? error.message : "Could not save — try again",
+          label: error instanceof ApiError ? error.message : t("quick.saveFailed"),
           tone: "danger",
         });
         return false;
       }
     },
-    [toast, onLogged],
+    [toast, onLogged, t],
   );
 
   const remove = useCallback(
@@ -56,10 +58,10 @@ export function useQuickLog(onLogged?: () => void): QuickLogger {
         toast.show({ label, tone: "danger" });
         onLogged?.();
       } catch {
-        toast.show({ label: "Could not delete", tone: "danger" });
+        toast.show({ label: t("history.deleteFailed"), tone: "danger" });
       }
     },
-    [toast, onLogged],
+    [toast, onLogged, t],
   );
 
   return { log, remove };

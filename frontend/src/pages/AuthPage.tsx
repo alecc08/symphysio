@@ -4,13 +4,16 @@ import { useState, type FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import { BrandMark } from "../components/icons/Tile";
+import { LanguageToggle } from "../components/LanguageToggle";
 import { ProfilePicker } from "../components/ProfilePicker";
+import { useI18n } from "../i18n";
 import { useSession } from "../state/session";
 
 const MIN_PASSWORD = 12;
 
 export function AuthPage() {
   const session = useSession();
+  const { t } = useI18n();
   const [mode, setMode] = useState<"login" | "register">("register");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,11 +34,7 @@ export function AuthPage() {
       setResetState("sent");
     } catch (caught) {
       setResetState("idle");
-      setError(
-        caught instanceof ApiError
-          ? caught.message
-          : "Could not reach the server. Try again in a moment.",
-      );
+      setError(caught instanceof ApiError ? caught.message : t("auth.serverUnreachable"));
     }
   }
 
@@ -43,14 +42,14 @@ export function AuthPage() {
     event.preventDefault();
     setError(null);
     if (mode === "register" && password.length < MIN_PASSWORD) {
-      setError(`Password must be at least ${MIN_PASSWORD} characters.`);
+      setError(t("auth.passwordTooShort", { count: MIN_PASSWORD }));
       return;
     }
     try {
       if (mode === "register") await session.register(email, password, profile);
       else await session.login(email, password);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Something went wrong. Try again.");
+      setError(caught instanceof ApiError ? caught.message : t("auth.somethingWrong"));
     }
   }
 
@@ -61,8 +60,8 @@ export function AuthPage() {
           <BrandMark className="h-10 w-10" />
         </span>
         <div>
-          <p className="text-xl font-extrabold tracking-tight">Symphysio</p>
-          <p className="text-sm text-muted">Click and log. See what actually correlates.</p>
+          <p className="text-xl font-extrabold tracking-tight">{t("app.name")}</p>
+          <p className="text-sm text-muted">{t("auth.brandTagline")}</p>
         </div>
       </div>
 
@@ -85,15 +84,23 @@ export function AuthPage() {
                 mode === value ? "bg-card text-ink shadow-sm" : "text-muted"
               }`}
             >
-              {value === "register" ? "Create account" : "Log in"}
+              {value === "register" ? t("auth.tabRegister") : t("auth.tabLogin")}
             </button>
           ))}
         </div>
 
-        {mode === "register" ? <ProfilePicker value={profile} onChange={setProfile} /> : null}
+        {mode === "register" ? (
+          <div className="mt-4">
+            {/* The language is asked here, not only in Settings, because it decides
+                what the account is *seeded with*: preset names become rows, and rows
+                are never re-translated afterwards. */}
+            <p className="mb-1 text-xs text-muted">{t("auth.languageIntro")}</p>
+            <ProfilePicker value={profile} onChange={setProfile} />
+          </div>
+        ) : null}
 
         <label className="block text-sm font-semibold" htmlFor="email">
-          Email
+          {t("auth.email")}
         </label>
         <input
           id="email"
@@ -109,7 +116,7 @@ export function AuthPage() {
         />
 
         <label className="mt-4 block text-sm font-semibold" htmlFor="password">
-          Password
+          {t("auth.password")}
         </label>
         <input
           id="password"
@@ -124,8 +131,7 @@ export function AuthPage() {
         />
         {mode === "register" ? (
           <p className={`mt-1.5 text-xs ${tooShort ? "text-symptom-ink" : "text-muted"}`}>
-            At least {MIN_PASSWORD} characters. Length beats symbols — breached passwords are
-            rejected.
+            {t("auth.passwordHint", { count: MIN_PASSWORD })}
           </p>
         ) : null}
 
@@ -141,10 +147,10 @@ export function AuthPage() {
           className="mt-5 w-full rounded-xl bg-physio py-3.5 text-base font-bold text-white disabled:opacity-60"
         >
           {session.busy
-            ? "Working…"
+            ? t("auth.working")
             : mode === "register"
-              ? "Create account & start logging"
-              : "Log in"}
+              ? t("auth.createAndStart")
+              : t("auth.logIn")}
         </button>
 
         {mode === "login" ? (
@@ -155,23 +161,21 @@ export function AuthPage() {
               disabled={!email.includes("@") || resetState === "busy" || session.busy}
               className="w-full rounded-xl border border-line bg-canvas py-3 text-sm font-bold text-muted disabled:opacity-50"
             >
-              {resetState === "busy" ? "Sending link…" : "Forgotten password?"}
+              {resetState === "busy" ? t("auth.sendingLink") : t("auth.forgottenPassword")}
             </button>
             {resetState === "sent" ? (
               /* Deliberately vague, and the server is vague back: whether the
                  address exists is not something this screen can know. */
-              <p className="mt-2 text-xs text-muted">
-                If that address has an account, a reset link is on its way. It works for 30
-                minutes, once, and changes nothing until it is opened.
-              </p>
+              <p className="mt-2 text-xs text-muted">{t("auth.resetSent", { minutes: 30 })}</p>
             ) : null}
           </div>
         ) : null}
       </form>
 
-      <p className="mt-4 text-center text-xs text-muted">
-        Your data stays on your own server and exports to CSV or JSON any time.
-      </p>
+      <div className="mt-4 flex flex-col items-center gap-2 text-center">
+        <LanguageToggle />
+        <p className="text-xs text-muted">{t("auth.privacyNote")}</p>
+      </div>
     </div>
   );
 }

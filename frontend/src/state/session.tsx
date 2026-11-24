@@ -12,6 +12,7 @@ import {
 
 import { ApiError, api } from "../api/client";
 import type { User } from "../api/types";
+import { useI18n } from "../i18n";
 
 interface SessionValue {
   user: User | null;
@@ -19,6 +20,8 @@ interface SessionValue {
   busy: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, profile?: string) => Promise<void>;
+  /** Language and time zone of the signed-in account, straight from the server. */
+  preferences: () => Promise<void>;
   logout: () => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -26,18 +29,29 @@ interface SessionValue {
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const { adopt, locale } = useI18n();
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const adoptUser = useCallback(
+    (who: User) => {
+      setUser(who);
+      // The account outranks this device: it is the copy the server also writes
+      // into emails and error responses, so the screen has to agree with them.
+      adopt(who.locale);
+    },
+    [adopt],
+  );
+
   const reload = useCallback(async () => {
     try {
       const { user: whoami } = await api.me();
-      setUser(whoami);
+      adoptUser(whoami);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) setUser(null);
     }
-  }, []);
+  }, [adoptUser]);
 
   useEffect(() => {
     void reload().finally(() => setReady(true));
@@ -52,7 +66,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setBusy(true);
         try {
           const { user: who } = await api.login(email, password);
-          setUser(who);
+          adoptUser(who);
         } finally {
           setBusy(false);
         }
@@ -63,8 +77,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           // `profile` is sent explicitly whenever the caller offers one: the API
           // default is the postnatal set for old clients, while the sign-up card
           // starts on "Start empty". The two only agree because the SPA is explicit.
-          const { user: who } = await api.register(email, password, profile);
-          setUser(who);
+          // The language is sent at sign-up because it decides the language the
+          // account is *seeded in*: preset names become rows, and rows are never
+          // re-translated behind someone's back.
+          const { user: who } = await api.register(email, password, profile, locale);
+          adoptUser(who);
         } finally {
           setBusy(false);
         }
@@ -79,8 +96,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
       reload,
+      preferences: async () => {
+        const { user: who } = await api.me();
+        adoptUser(who);
+      },
     }),
-    [user, ready, busy, reload],
+    [user, ready, busy, reload, adoptUser, locale],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

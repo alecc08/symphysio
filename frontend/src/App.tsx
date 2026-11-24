@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { BottomNav, type Tab } from "./components/BottomNav";
 import { EmailBanner } from "./components/EmailBanner";
+import { OfflineBanner } from "./components/OfflineBanner";
+import { I18nProvider, useI18n } from "./i18n";
 import { GearIcon } from "./components/icons/Ui";
 import { BrandMark } from "./components/icons/Tile";
 import { ResetPage } from "./components/ResetPage";
@@ -17,6 +19,7 @@ import { ToastProvider } from "./state/toast";
 
 function Shell() {
   const { user, ready } = useSession();
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("log");
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The emailed confirmation link lands on /verify; the API route of the same
@@ -41,7 +44,9 @@ function Shell() {
   if (!ready) {
     return (
       <div className="flex min-h-dvh items-center justify-center text-muted">
-        <p className="animate-pulse text-sm font-semibold">Loading Symphysio…</p>
+        <p className="animate-pulse text-sm font-semibold">
+          {t("app.loadingNamed", { name: t("app.name") })}
+        </p>
       </div>
     );
   }
@@ -78,12 +83,12 @@ function Shell() {
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-canvas/90 px-4 py-2 backdrop-blur">
           <span className="flex items-center gap-2 text-sm font-extrabold tracking-tight">
             <BrandMark className="h-5 w-5" />
-            Symphysio
+            {t("app.name")}
           </span>
           <button
             type="button"
             onClick={() => setSettingsOpen((open) => !open)}
-            aria-label={settingsOpen ? "Close settings" : "Open settings"}
+            aria-label={settingsOpen ? t("settings.close") : t("settings.open")}
             aria-pressed={settingsOpen}
             className={`rounded-full border p-2 ${
               settingsOpen ? "border-physio bg-physio text-white" : "border-line bg-card text-muted"
@@ -94,6 +99,8 @@ function Shell() {
         </header>
 
         <EmailBanner />
+
+        <OfflineBanner />
 
         <main>
           {settingsOpen ? (
@@ -114,11 +121,16 @@ function Shell() {
 }
 
 export function App() {
+  // I18nProvider is outermost on purpose: `SessionProvider` adopts the account's
+  // language as soon as it learns who is signed in, and the sign-in screen needs
+  // the device's own choice before there is any session at all.
   return (
-    <SessionProvider>
-      <ToastProvider>
-        <Shell />
-      </ToastProvider>
-    </SessionProvider>
+    <I18nProvider>
+      <SessionProvider>
+        <ToastProvider>
+          <Shell />
+        </ToastProvider>
+      </SessionProvider>
+    </I18nProvider>
   );
 }

@@ -4,7 +4,8 @@
 import { useEffect, useRef } from "react";
 
 import type { SummaryDaily, TimeOfDay } from "../api/types";
-import { monthDayLabel } from "../lib/time";
+import { useI18n } from "../i18n";
+import { formatters } from "../lib/time";
 
 function Bar({
   ratio,
@@ -38,6 +39,8 @@ export function DailyBars({
   toneClass: string;
   emptyLabel: string;
 }) {
+  const { t, tag } = useI18n();
+  const fmt = formatters(tag);
   const recent = days.slice(-14);
   if (recent.length === 0) return <p className="text-sm text-muted">{emptyLabel}</p>;
   const max = Math.max(1, ...recent.map((day) => day[metric]));
@@ -56,21 +59,20 @@ export function DailyBars({
         ))}
       </div>
       <div className="mt-1.5 flex items-center justify-between text-[0.65rem] font-semibold text-muted">
-        <span>{monthDayLabel(recent[0].day)}</span>
-        <span>
-          {total} total · peak {max}/day
-        </span>
-        <span>{monthDayLabel(recent[recent.length - 1].day)}</span>
+        <span>{fmt.monthDay(recent[0].day)}</span>
+        <span>{t("charts.totalPeak", { total: total, max: max })}</span>
+        <span>{fmt.monthDay(recent[recent.length - 1].day)}</span>
       </div>
     </div>
   );
 }
 
 export function SeverityTrend({ days }: { days: SummaryDaily[] }) {
+  const { t } = useI18n();
   const points = days.slice(-14).map((day) => ({ day: day.day, value: day.avg_symptom_severity }));
   const drawn = points.filter((point) => point.value !== null) as { day: string; value: number }[];
   if (drawn.length < 2) {
-    return <p className="text-sm text-muted">Log a few symptoms to see the severity trend.</p>;
+    return <p className="text-sm text-muted">{t("charts.severityEmpty")}</p>;
   }
   const width = 280;
   const height = 72;
@@ -88,7 +90,7 @@ export function SeverityTrend({ days }: { days: SummaryDaily[] }) {
         viewBox={`0 0 ${width} ${height}`}
         className="h-20 w-full"
         role="img"
-        aria-label="Average daily symptom severity, last 14 days"
+        aria-label={t("charts.severityAria")}
       >
         <path d={`${path} L${width} ${height} L0 ${height} Z`} className="fill-symptom/10" />
         <path
@@ -100,13 +102,14 @@ export function SeverityTrend({ days }: { days: SummaryDaily[] }) {
         />
       </svg>
       <p className="mt-1.5 text-[0.65rem] font-semibold text-muted">
-        0 — 10 scale · {drawn.length} days with entries
+        {t("charts.severityScale", { count: drawn.length })}
       </p>
     </div>
   );
 }
 
 export function HourBars({ data }: { data: TimeOfDay }) {
+  const { t } = useI18n();
   const max = Math.max(1, ...data.hours.map((hour) => hour.count));
   const busiest = data.hours.reduce(
     (best, hour) => (hour.count > best.count ? hour : best),
@@ -121,7 +124,10 @@ export function HourBars({ data }: { data: TimeOfDay }) {
               ratio={hour.count / max}
               toneClass={hour.count > 0 ? "bg-trigger" : "bg-line"}
               minHeightPx={2}
-              title={`${String(hour.hour).padStart(2, "0")}:00 local — ${hour.count}`}
+              title={t("charts.hourTitle", {
+                hour: String(hour.hour).padStart(2, "0"),
+                count: hour.count,
+              })}
             />
           </div>
         ))}
@@ -130,8 +136,8 @@ export function HourBars({ data }: { data: TimeOfDay }) {
         <span>00</span>
         <span>
           {busiest.count > 0
-            ? `busiest around ${String(busiest.hour).padStart(2, "0")}:00`
-            : "no data"}
+            ? t("charts.busiest", { hour: String(busiest.hour).padStart(2, "0") })
+            : t("charts.noData")}
         </span>
         <span>23</span>
       </div>

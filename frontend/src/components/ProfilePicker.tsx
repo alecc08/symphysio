@@ -18,16 +18,23 @@ import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { Profile } from "../api/types";
+import { useI18n } from "../i18n";
+import type { Translate } from "../lib/timeLabels";
 
-function counts(profile: Profile): string {
+/** What the set will seed, counted. Zero counts are left out rather than printed
+   and crossed out: the labels come from the server and are already in the
+   language the account asked for, so this line only adds the numbers. */
+function counts(profile: Profile, t: Translate): string {
   // The "none" blurb already says what happens, so do not say it twice.
-  if (profile.key === "none") return "nothing is added for you";
-  const parts = [
-    `${profile.counts.exercises} physio`,
-    `${profile.counts.symptoms} symptoms`,
-    `${profile.counts.relief + profile.counts.triggers} triggers & relief`,
-  ];
-  return parts.filter((part) => !part.startsWith("0 ")).join(" · ");
+  if (profile.key === "none") return t("profile.noneCounts");
+  const parts: string[] = [];
+  if (profile.counts.exercises)
+    parts.push(t("profile.countsPhysio", { count: profile.counts.exercises }));
+  if (profile.counts.symptoms)
+    parts.push(t("profile.countsSymptoms", { count: profile.counts.symptoms }));
+  const contexts = profile.counts.relief + profile.counts.triggers;
+  if (contexts) parts.push(t("profile.countsContexts", { count: contexts }));
+  return parts.join(" · ");
 }
 
 export function ProfilePicker({
@@ -37,6 +44,7 @@ export function ProfilePicker({
   value: string;
   onChange: (key: string) => void;
 }) {
+  const { t, locale } = useI18n();
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -49,16 +57,16 @@ export function ProfilePicker({
     return () => {
       live = false;
     };
-  }, []);
+    // `locale` is a dependency because the labels are the server's words, not
+    // this file's: choosing French has to re-ask, or the picker keeps the English
+    // set names while everything around it is French.
+  }, [locale]);
 
   if (failed || !profiles) {
     // The API default is the postnatal set, so a picker that cannot load must not
     // silently send nothing: say what will happen instead of hiding the choice.
     return (
-      <p className="mt-4 text-xs text-muted">
-        Could not load the starting sets. The account will start with the pelvic-health
-        presets, which you can change or remove in Settings.
-      </p>
+      <p className="mt-4 text-xs text-muted">{t("profile.loadFailed")}</p>
     );
   }
 
@@ -67,7 +75,7 @@ export function ProfilePicker({
   return (
     <div className="mt-4">
       <label className="block text-sm font-semibold" htmlFor="profile">
-        What are you tracking?
+        {t("profile.label")}
       </label>
       <select
         id="profile"
@@ -84,7 +92,7 @@ export function ProfilePicker({
       {/* The reason for the select's one-word label, so the choice is informed and
           the count of what gets seeded is visible without opening anything. */}
       <p className="mt-2 text-xs leading-snug text-muted">
-        {chosen.blurb} <span className="text-faint">{counts(chosen)}</span>
+        {chosen.blurb} <span className="text-faint">{counts(chosen, t)}</span>
       </p>
     </div>
   );

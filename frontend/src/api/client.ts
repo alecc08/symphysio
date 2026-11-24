@@ -9,6 +9,7 @@ import type {
   CreatedLog,
   ExerciseDefinition,
   PlanEvent,
+  Preferences,
   Profile,
   Suggestion,
   Summary,
@@ -18,7 +19,28 @@ import type {
   TimelinePage,
 } from "./types";
 
+import { browserLocale, storedLocale } from "../i18n/resolve";
+
 const BASE = "/api/v1";
+
+/** The device's IANA zone, sent so an unauthenticated request can be answered in
+ *  the right shape. Never stored without the person choosing it: a laptop in the
+ *  wrong zone should not pin a wrong zone to an account forever. */
+export function deviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+// Set by the i18n provider. One place owns the language; the headers below read
+// it, so the sign-up mail, a failed login and a validation error all come back in
+// the language the person is looking at — including before there is an account.
+// It starts from the device's own choice rather than from English, because the
+// very first request (the sign-up profile list, the confirm-mail language) is
+// answered before React has run an effect.
+let language: string = storedLocale() ?? browserLocale();
 
 export class ApiError extends Error {
   status: number;
@@ -56,7 +78,14 @@ async function request<T>(
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
   const method = init.method ?? "GET";
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    // The server writes its own words — a failed login, a validation error, the
+    // sign-up confirmation mail — and this is the only signal it has before the
+    // person has an account to hold a preference.
+    "Accept-Language": language === "fr" ? "fr-CA,fr;q=0.9" : "en-CA,en;q=0.9",
+    "X-Timezone": deviceTimezone(),
+  };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && method !== "HEAD") {
     const token = csrfToken();
@@ -86,12 +115,24 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
 export type CatalogKind = "exercises" | "symptoms" | "contexts";
 
 export const api = {
-  register: (email: string, password: string, profile?: string) =>
+  /** The i18n provider calls this on every change; the headers above read it. */
+  setLocale: (next: string) => {
+    language = next === "fr" ? "fr" : "en";
+  },
+  register: (email: string, password: string, profile?: string, locale?: string) =>
     request<AuthResponse>("/auth/register", {
       method: "POST",
       // Sent explicitly when the caller chooses: an omitted profile means "the old
-      // default" to the API, which is not the same answer as "start empty".
-      body: profile === undefined ? { email, password } : { email, password, profile },
+      // default" to the API, which is not the same answer as "start empty". The
+      // language is sent explicitly too, because it decides what the account is
+      // *seeded with* — French preset names become rows — and that question can
+      // only be asked once.
+      body: {
+        email,
+        password,
+        ...(profile === undefined ? {} : { profile }),
+        ...(locale === undefined ? {} : { locale }),
+      },
     }),
   login: (email: string, password: string) =>
     request<AuthResponse>("/auth/login", { method: "POST", body: { email, password } }),
@@ -155,6 +196,12 @@ export const api = {
     request<TimeOfDay>(`/analytics/time-of-day${qs(params)}`),
 
   profiles: () => request<Profile[]>("/catalog/profiles"),
+  // The two account preferences. `effective_timezone` is what the server is
+  // actually cutting days with, which is not always the stored one: an account
+  // that never chose inherits the instance default, and Settings has to say so.
+  preferences: () => request<Preferences>("/auth/preferences"),
+  patchPreferences: (body: { locale?: string; timezone?: string | null }) =>
+    request<Preferences>("/auth/preferences", { method: "PATCH", body }),
   // Plan events: the appointment layer. Read and written by the signed-in person.
   planEvents: (params: { limit?: number; from?: number; to?: number } = {}) =>
     request<PlanEvent[]>(`/plan-events${qs(params)}`),

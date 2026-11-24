@@ -8,6 +8,9 @@ this component only renders it, and says what is missing when the gate refuses.
 */
 
 import type { Associations, Finding, GateCount } from "../api/types";
+import { useI18n } from "../i18n";
+import { gateLabel, verdictLabel } from "../lib/enums";
+import type { Translate } from "../lib/timeLabels";
 
 const VERDICT_STYLE: Record<string, string> = {
   "worth a look": "border-symptom/40 bg-symptom/10 text-symptom-ink",
@@ -15,40 +18,30 @@ const VERDICT_STYLE: Record<string, string> = {
   "nothing found": "border-physio/30 bg-physio/10 text-physio-ink",
 };
 
-// Noun phrases, not sentences: they are joined into one line ("21 pairs — too few
-// follow-ons...; 1 pair — no comparable day"), and full stops inside that read wrong.
-const GATE_LINE: Record<string, string> = {
-  too_few_sessions: "too few sessions of this to say anything",
-  too_few_hits: "too few follow-ons to tell a pattern from a coincidence",
-  no_comparable_windows: "no comparable day, because this is logged almost every day",
-};
-
 function FindingRow({ finding, windowLabel }: { finding: Finding; windowLabel: string }) {
+  const { t } = useI18n();
   return (
     <li className="row-enter rounded-xl bg-canvas p-3">
       <p className="text-sm leading-snug">
-        <strong>{finding.symptom_name}</strong> followed{" "}
+        <strong>{finding.symptom_name}</strong> {t("assoc.followed")}{" "}
+        <strong>{t("assoc.ratioSessions", { hits: finding.hits, sessions: finding.sessions })}</strong>{" "}
+        {t("assoc.sessionsOf")} {finding.exposure_name}{" "}
+        {t("assoc.withinWindow", { window: windowLabel })} {t("assoc.controlLead")}{" "}
         <strong>
-          {finding.hits} of {finding.sessions}
+          {t("assoc.ratioTimes", { hits: finding.control_hits, windows: finding.control_windows })}
         </strong>{" "}
-        {finding.exposure_name} sessions within {windowLabel}. On comparable days with
-        none, it happened{" "}
-        <strong>
-          {finding.control_hits} of {finding.control_windows}
-        </strong>{" "}
-        times.
+        {t("assoc.timesEnd")}
       </p>
       <p
         className={`mt-2 inline-block rounded-full border px-2.5 py-1 text-xs font-bold ${
           VERDICT_STYLE[finding.verdict] ?? VERDICT_STYLE["looks like chance"]
         }`}
       >
-        {finding.verdict}
+        {verdictLabel(finding.verdict, t)}
       </p>
       {finding.default_severity_hits > 0 ? (
         <p className="mt-2 text-xs text-muted">
-          {finding.default_severity_hits} of those symptom entries used the default
-          severity, not a chosen one.
+          {t("assoc.defaultSeverity", { count: finding.default_severity_hits })}
         </p>
       ) : null}
     </li>
@@ -56,13 +49,12 @@ function FindingRow({ finding, windowLabel }: { finding: Finding; windowLabel: s
 }
 
 /** Why the card could not answer for some pairs. Said in words, counted once. */
-function gateSentence(gates: GateCount[]): string | null {
+function gateSentence(gates: GateCount[], t: Translate): string | null {
   if (gates.length === 0) return null;
-  const parts = gates.map(
-    (item) =>
-      `${item.pairs} pair${item.pairs === 1 ? "" : "s"} — ${GATE_LINE[item.gate] ?? "not enough to tell"}`,
+  const parts = gates.map((item) =>
+    t("assoc.gatePairs", { count: item.pairs, why: gateLabel(item.gate, t) }),
   );
-  return `Could not compare ${parts.join("; ")}.`;
+  return t("assoc.gateLead", { parts: parts.join("; ") });
 }
 
 export function AssociationCard({
@@ -74,14 +66,15 @@ export function AssociationCard({
   windowLabel: string;
   onWindow: (label: string) => void;
 }) {
+  const { t } = useI18n();
   const worthALook = data.findings.filter((finding) => finding.verdict === "worth a look");
-  const gate = gateSentence(data.gates);
+  const gate = gateSentence(data.gates, t);
 
   return (
     <section className="mt-4 rounded-2xl border border-line bg-card p-4">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-extrabold tracking-tight">What follows a session?</h2>
-        <span className="text-xs text-muted">{data.days}d</span>
+        <h2 className="text-sm font-extrabold tracking-tight">{t("card.associations")}</h2>
+        <span className="text-xs text-muted">{t("assoc.rangeDays", { days: data.days })}</span>
       </div>
 
       <div className="mt-3 flex gap-1.5">
@@ -105,14 +98,19 @@ export function AssociationCard({
       {data.sufficiency !== "enough" ? (
         <p className="mt-3 text-sm text-muted">
           {data.sufficiency === "none"
-            ? "Nothing logged in this range yet. This card needs a diary, not a guess."
-            : `Not enough yet: ${data.coverage.days_covered} logged days and ${data.coverage.symptom_logs} symptom entries in ${data.days} days. Keep logging — the maths will not guess.`}
+            ? t("assoc.sufficiencyNone")
+            : t("assoc.sufficiencyFew", {
+                days: data.coverage.days_covered,
+                symptoms: data.coverage.symptom_logs,
+                range: data.days,
+              })}
         </p>
       ) : worthALook.length === 0 ? (
         <p className="mt-3 text-sm text-muted">
-          Nothing here stands out at {windowLabel}, across {data.pairs_examined} pair
-          {data.pairs_examined === 1 ? "" : "s"} of definitions. That is a result, not a
-          failure: it means nothing followed a session more often than on comparable days.
+          {t("assoc.nothingStandsOut", {
+            window: windowLabel,
+            count: data.pairs_examined,
+          })}
         </p>
       ) : (
         <ul className="mt-3 space-y-2">
@@ -133,10 +131,14 @@ export function AssociationCard({
       {data.sufficiency === "enough" && (worthALook.length > 0 || data.skipped_sessions > 0) ? (
         <p className="mt-3 text-xs text-faint">
           {worthALook.length > 0
-            ? `${worthALook.length} of ${data.pairs_examined} pairs examined, at ${windowLabel}.`
+            ? t("assoc.examined", {
+                count: worthALook.length,
+                total: data.pairs_examined,
+                window: windowLabel,
+              })
             : ""}
           {data.skipped_sessions > 0
-            ? ` ${data.skipped_sessions} session${data.skipped_sessions === 1 ? "" : "s"} you logged as skipped were left out.`
+            ? ` ${t("assoc.skipped", { count: data.skipped_sessions })}`
             : ""}
         </p>
       ) : null}

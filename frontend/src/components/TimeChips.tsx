@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 
-import { TIME_CHIPS, formatClock, fromLocalInputValue, toLocalInputValue } from "../lib/time";
+import { useI18n } from "../i18n";
+import { formatters, fromLocalInputValue, toLocalInputValue } from "../lib/time";
+import { relativeLabel, timeChips } from "../lib/timeLabels";
 
 export function TimeChips({
   value,
@@ -11,6 +13,7 @@ export function TimeChips({
   value: number;
   onChange: (utcSeconds: number) => void;
 }) {
+  const { t, tag } = useI18n();
   const [customOpen, setCustomOpen] = useState(false);
   const now = Math.floor(Date.now() / 1000);
   const deltaMinutes = Math.round((now - value) / 60);
@@ -25,14 +28,14 @@ export function TimeChips({
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between text-xs font-semibold text-muted">
-        <span>When</span>
+        <span>{t("time.when")}</span>
         <span className="tabular-nums">
-          {formatClock(value)}
-          {deltaMinutes > 1 ? ` · ${deltaMinutes}m ago` : ""}
+          {formatters(tag).clock(value)}
+          {deltaMinutes > 1 ? ` · ${relativeLabel(value, t, tag)}` : ""}
         </span>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
-        {TIME_CHIPS.map((chip) => (
+        {timeChips(t).map((chip) => (
           <button
             key={chip.label}
             type="button"
@@ -62,7 +65,7 @@ export function TimeChips({
           max={toLocalInputValue(now + 60)}
           onChange={(event) => onChange(fromLocalInputValue(event.target.value))}
           className="mt-3 w-full rounded-xl border border-line bg-canvas px-3 py-2.5 text-base"
-          aria-label="Custom time"
+          aria-label={t("time.customTime")}
         />
       ) : null}
     </div>

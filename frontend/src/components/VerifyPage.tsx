@@ -12,6 +12,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import { CheckIcon } from "./icons/Ui";
 import { BrandMark } from "./icons/Tile";
+import { LanguageToggle } from "./LanguageToggle";
+import { useI18n } from "../i18n";
 import { useSession } from "../state/session";
 
 type State =
@@ -30,6 +32,7 @@ function tokenFromUrl(): string | null {
 
 export function VerifyPage({ onDone }: { onDone?: () => void }) {
   const { reload, user } = useSession();
+  const { t } = useI18n();
   const [state, setState] = useState<State>(WORKING);
   const started = useRef(false);
 
@@ -48,26 +51,19 @@ export function VerifyPage({ onDone }: { onDone?: () => void }) {
     // Drop the token from the visible URL before anything else happens.
     window.history.replaceState({}, "", "/verify");
     if (!token) {
-      setState({
-        kind: "failed",
-        message: "This link is incomplete. Open the confirmation link from your email again.",
-        resendable: Boolean(user),
-      });
+      setState({ kind: "failed", message: t("verify.incomplete"), resendable: Boolean(user) });
       return;
     }
     void (async () => {
       try {
         await api.verifyEmail(token);
-        setState({ kind: "done", message: "Email confirmed." });
+        setState({ kind: "done", message: t("verify.done") });
         // The in-app banner should disappear without a manual refresh.
         void reload();
       } catch (error) {
         setState({
           kind: "failed",
-          message:
-            error instanceof ApiError
-              ? error.message
-              : "Could not reach the server. Check the connection and try again.",
+          message: error instanceof ApiError ? error.message : t("verify.unreachable"),
           resendable: Boolean(user),
         });
       }
@@ -77,11 +73,11 @@ export function VerifyPage({ onDone }: { onDone?: () => void }) {
   const resend = useCallback(async () => {
     try {
       await api.resendVerification();
-      setState({ kind: "done", message: "A new link is on its way. Open it on this device." });
+      setState({ kind: "done", message: t("verify.newLinkSent") });
     } catch (error) {
       setState({
         kind: "failed",
-        message: error instanceof ApiError ? error.message : "Could not send another link.",
+        message: error instanceof ApiError ? error.message : t("verify.sendFailed"),
         resendable: false,
       });
     }
@@ -95,13 +91,13 @@ export function VerifyPage({ onDone }: { onDone?: () => void }) {
             <BrandMark className="h-9 w-9" />
           </span>
           <div>
-            <p className="text-lg font-extrabold tracking-tight">Confirm your email</p>
-            <p className="text-sm text-muted">Symphysio</p>
+            <p className="text-lg font-extrabold tracking-tight">{t("verify.title")}</p>
+            <p className="text-sm text-muted">{t("app.name")}</p>
           </div>
         </div>
 
         {state.kind === "working" ? (
-          <p className="animate-pulse mt-6 text-sm font-semibold text-muted">Confirming…</p>
+          <p className="animate-pulse mt-6 text-sm font-semibold text-muted">{t("verify.working")}</p>
         ) : null}
 
         {state.kind === "done" ? (
@@ -112,16 +108,13 @@ export function VerifyPage({ onDone }: { onDone?: () => void }) {
               </span>
               {state.message}
             </p>
-            <p className="mt-2 text-sm text-muted">
-              Your account can now recover itself if you lose your phone. Nothing else changed —
-              your log has been saving the whole time.
-            </p>
+            <p className="mt-2 text-sm text-muted">{t("verify.doneBody")}</p>
             <button
               type="button"
               onClick={finish}
               className="mt-6 h-12 w-full rounded-2xl bg-physio px-4 text-base font-extrabold text-white"
             >
-              Open Symphysio
+              {t("verify.open", { name: t("app.name") })}
             </button>
           </>
         ) : null}
@@ -129,17 +122,14 @@ export function VerifyPage({ onDone }: { onDone?: () => void }) {
         {state.kind === "failed" ? (
           <>
             <p className="mt-6 text-sm font-semibold text-symptom-ink">{state.message}</p>
-            <p className="mt-2 text-sm text-muted">
-              If the link is old, ask for a new one. Old links stop working the moment a new one
-              is sent.
-            </p>
+            <p className="mt-2 text-sm text-muted">{t("verify.oldLink")}</p>
             {state.resendable ? (
               <button
                 type="button"
                 onClick={() => void resend()}
                 className="mt-6 h-12 w-full rounded-2xl bg-physio px-4 text-base font-extrabold text-white"
               >
-                Send a new link
+                {t("verify.sendNew")}
               </button>
             ) : null}
             <button
@@ -147,10 +137,16 @@ export function VerifyPage({ onDone }: { onDone?: () => void }) {
               onClick={finish}
               className="mt-3 h-12 w-full rounded-2xl border border-line bg-card px-4 text-base font-bold"
             >
-              Back to the log
+              {t("verify.backToLog")}
             </button>
           </>
         ) : null}
+      </div>
+
+      {/* Same reason as the reset page: this arrives by email, possibly on a device
+          that speaks a different language than the one the mail was written in. */}
+      <div className="mt-4 flex justify-center">
+        <LanguageToggle />
       </div>
     </main>
   );

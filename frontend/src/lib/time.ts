@@ -1,5 +1,17 @@
-/* Time helpers. The API stores epoch seconds + the client's tz offset, so all
-   display formatting stays local without a timezone library. */
+/* Time helpers, in the language being displayed.
+
+   The API stores epoch seconds plus the tz offset the device reported at that
+   instant, so display formatting stays local without a timezone library — see
+   docs/DATABASE.md.
+
+   What was wrong here: every `Intl` formatter was built with `undefined` as the
+   locale, meaning "whatever this browser says". A French app in an en-US browser
+   printed "Mon, 23 nov." — half one language, half the other — and 03/11/2026
+   read as March 11 to one person and November 3 to another. Every formatter now
+   takes the app's tag (`fr-CA` / `en-CA`), because the date format is part of the
+   translation. `en-CA` rather than `en-US` on purpose: it keeps the day first,
+   which is what a Canadian reading English expects.
+*/
 
 export const MINUTE = 60;
 export const HOUR = 3600;
@@ -11,50 +23,51 @@ export function localTzOffsetMin(atUtc: number = Math.floor(Date.now() / 1000)):
   return Math.round(-local.getTimezoneOffset());
 }
 
-const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
-const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-const monthDayFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-
-export function formatClock(atUtc: number): string {
-  return timeFmt.format(new Date(atUtc * 1000));
+export interface Formatters {
+  clock: (atUtc: number) => string;
+  day: (atUtc: number) => string;
+  weekday: (isoDay: string) => string;
+  monthDay: (isoDay: string) => string;
+  /** `Nov 23, 2026` / `23 nov. 2026` — the printed report needs the year. */
+  date: (atUtc: number) => string;
 }
 
-export function formatDay(atUtc: number): string {
-  return dayFmt.format(new Date(atUtc * 1000));
+// One set per language, built once: `Intl.DateTimeFormat` is not cheap and these
+// run over every row of a 200-entry history list.
+const FORMATTERS = new Map<string, Formatters>();
+
+export function formatters(tag: string): Formatters {
+  const cached = FORMATTERS.get(tag);
+  if (cached) return cached;
+  const clock = new Intl.DateTimeFormat(tag, { hour: "numeric", minute: "2-digit" });
+  const day = new Intl.DateTimeFormat(tag, { weekday: "short", month: "short", day: "numeric" });
+  const weekday = new Intl.DateTimeFormat(tag, { weekday: "short" });
+  const monthDay = new Intl.DateTimeFormat(tag, { month: "short", day: "numeric" });
+  const date = new Intl.DateTimeFormat(tag, { year: "numeric", month: "short", day: "numeric" });
+  const built: Formatters = {
+    clock: (atUtc) => clock.format(new Date(atUtc * 1000)),
+    day: (atUtc) => day.format(new Date(atUtc * 1000)),
+    weekday: (isoDay) => weekday.format(new Date(`${isoDay}T12:00:00`)),
+    monthDay: (isoDay) => monthDay.format(new Date(`${isoDay}T12:00:00`)),
+    date: (atUtc) => date.format(new Date(atUtc * 1000)),
+  };
+  FORMATTERS.set(tag, built);
+  return built;
 }
 
-export function weekdayLabel(isoDay: string): string {
-  return weekdayFmt.format(new Date(`${isoDay}T12:00:00`));
-}
+/** Numbers are part of the translation too: `fr-CA` writes -1,2 and `en-CA`
+ *  writes -1.2, and a clinical number printed with the wrong separator is read
+ *  as a different number. */
+const NUMBER_FORMATS = new Map<string, Intl.NumberFormat>();
 
-export function monthDayLabel(isoDay: string): string {
-  return monthDayFmt.format(new Date(`${isoDay}T12:00:00`));
+export function formatNumber(value: number, tag: string, maxFractionDigits = 1): string {
+  const key = `${tag}:${maxFractionDigits}`;
+  const cached = NUMBER_FORMATS.get(key);
+  if (cached) return cached.format(value);
+  const built = new Intl.NumberFormat(tag, { maximumFractionDigits: maxFractionDigits });
+  NUMBER_FORMATS.set(key, built);
+  return built.format(value);
 }
-
-/** "just now", "12m ago", "3h ago", "Mar 4" */
-export function relativeLabel(atUtc: number, nowUtc: number = Math.floor(Date.now() / 1000)): string {
-  const delta = nowUtc - atUtc;
-  if (delta < 90) return "just now";
-  if (delta < HOUR * 6) return `${Math.round(delta / MINUTE)}m ago`;
-  if (delta < DAY) return `${Math.round(delta / HOUR)}h ago`;
-  if (delta < DAY * 7) return `${Math.round(delta / DAY)}d ago`;
-  return monthDayLabel(new Date(atUtc * 1000).toISOString().slice(0, 10));
-}
-
-export interface TimeChip {
-  label: string;
-  offsetSeconds: number | null;
-}
-
-/** Retroactive logging strip: Now, -15m, -1h, -3h, Custom. */
-export const TIME_CHIPS: TimeChip[] = [
-  { label: "Now", offsetSeconds: 0 },
-  { label: "-15m", offsetSeconds: -15 * MINUTE },
-  { label: "-1h", offsetSeconds: -HOUR },
-  { label: "-3h", offsetSeconds: -3 * HOUR },
-  { label: "Custom", offsetSeconds: null },
-];
 
 export function toLocalInputValue(atUtc: number): string {
   const date = new Date(atUtc * 1000);
@@ -67,44 +80,4 @@ export function toLocalInputValue(atUtc: number): string {
 export function fromLocalInputValue(value: string): number {
   const parsed = new Date(value).getTime();
   return Number.isNaN(parsed) ? Math.floor(Date.now() / 1000) : Math.floor(parsed / 1000);
-}
-
-export function describeMetric(item: {
-  event_type: string;
-  sets_done: number | null;
-  reps_done: number | null;
-  duration_sec: number | null;
-  duration_min: number | null;
-  primary_metric: number | null;
-  severity: number | null;
-  intensity: number | null;
-  severity_default?: number | null;
-}): string {
-  const parts: string[] = [];
-  if (item.event_type === "exercise" && item.sets_done === 0) {
-    // "Did not do it today" is a record of keeping track, not a dose of zero.
-    parts.push("skipped");
-  } else if (item.sets_done != null && item.reps_done != null) {
-    parts.push(`${item.sets_done}×${item.reps_done}`);
-  } else if (item.reps_done != null) {
-    parts.push(`${item.reps_done} reps`);
-  } else if (item.sets_done != null) {
-    parts.push(`${item.sets_done} sets`);
-  }
-  if (item.duration_sec != null) parts.push(`${item.duration_sec}s`);
-  if (item.duration_min != null) parts.push(`${item.duration_min} min`);
-  if (item.event_type === "symptom" && item.severity != null) {
-    // The row knows whether that number was chosen or left on the drawer's
-    // default, and history says which — otherwise the log reads as a measurement
-    // that was never made.
-    parts.push(
-      item.severity_default === 1
-        ? `severity ${item.severity}/10 (default)`
-        : `severity ${item.severity}/10`,
-    );
-  }
-  if (item.event_type === "exercise" && item.primary_metric != null)
-    parts.push(`effort ${item.primary_metric}/10`);
-  if (item.event_type === "context" && item.intensity != null) parts.push(`${item.intensity}/10`);
-  return parts.join(" · ");
 }
