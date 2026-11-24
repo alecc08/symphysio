@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from "react";
 
+import { useI18n } from "../i18n";
 import { CloseIcon } from "./icons/Ui";
 
 const toneAccent: Record<string, string> = {
@@ -24,6 +25,7 @@ export function Sheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -41,7 +43,7 @@ export function Sheet({
     <div className="fixed inset-0 z-40 flex items-end justify-center" role="dialog" aria-modal="true">
       <button
         type="button"
-        aria-label="Close"
+        aria-label={t("sheet.close")}
         onClick={onClose}
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px]"
       />
@@ -59,7 +61,7 @@ export function Sheet({
             type="button"
             onClick={onClose}
             className="rounded-full p-2 text-muted hover:bg-canvas"
-            aria-label="Close drawer"
+            aria-label={t("sheet.closeDrawer")}
           >
             <CloseIcon className="h-5 w-5" />
           </button>

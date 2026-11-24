@@ -11,7 +11,9 @@ from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .i18n import normalize as normalize_locale
 from .profiles import DEFAULT_PROFILE, PROFILES
+from .timezones import normalize_timezone
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
@@ -46,6 +48,13 @@ class RegisterRequest(StrictModel):
     # default is the postnatal set so a client predating the feature behaves
     # exactly as before; the SPA always sends an explicit choice.
     profile: Annotated[str, Field(min_length=1, max_length=40)] = DEFAULT_PROFILE
+    # Language and time zone of the account, chosen at sign-up because both
+    # change what the account is *seeded with*: an `fr` account gets French
+    # preset names, because those names become rows and are never re-translated.
+    # Empty means "ask the request": the SPA's `Accept-Language` / `X-Timezone`
+    # headers, then the instance default.
+    locale: Annotated[str, Field(min_length=0, max_length=35)] = ""
+    timezone: Annotated[str, Field(min_length=0, max_length=64)] = ""
 
     @field_validator("email")
     @classmethod
@@ -65,6 +74,23 @@ class RegisterRequest(StrictModel):
                 "unknown profile; choose one of " + ", ".join(sorted(PROFILES)) + " or omit it"
             )
         return key
+
+    @field_validator("locale")
+    @classmethod
+    def _locale_shape(cls, value: str) -> str:
+        # Deliberately forgiving: `fr-CA` and `Fr_CA` are the same request, and a
+        # locale we do not have is a display preference, not a security input.
+        return "" if not value.strip() else normalize_locale(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_shape(cls, value: str) -> str:
+        if not value.strip():
+            return ""
+        resolved = normalize_timezone(value)
+        if resolved is None:
+            raise ValueError("unknown time zone; use an IANA name like America/Toronto")
+        return resolved
 
 
 class LoginRequest(StrictModel):
@@ -119,6 +145,55 @@ class UserOut(StrictModel):
     # Not a setting: changing it later does not rewrite history, so it is shown
     # as provenance, and the label comes from GET /catalog/profiles.
     profile_key: str = DEFAULT_PROFILE
+    # The two account preferences, so the SPA can adopt them on any device and
+    # Settings can show what it is currently using. `timezone` is None when the
+    # account never chose; the response for a signed-in visitor also carries the
+    # effective zone the server is using (see PreferencesOut).
+    locale: str = "en"
+    timezone: str | None = None
+
+
+class PreferencesUpdate(StrictModel):
+    """What the Settings screen may change about the account itself.
+
+    Both fields are optional and independently updatable. `timezone: null` means
+    "clear it", which puts the account back under the instance default.
+    """
+
+    locale: Annotated[str, Field(min_length=0, max_length=35)] | None = None
+    timezone: Annotated[str, Field(min_length=0, max_length=64)] | None = None
+
+    @field_validator("locale")
+    @classmethod
+    def _locale_shape(cls, value: str | None) -> str | None:
+        return None if value is None or not value.strip() else normalize_locale(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_shape(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            return ""
+        resolved = normalize_timezone(value)
+        if resolved is None:
+            raise ValueError("unknown time zone; use an IANA name like America/Toronto")
+        return resolved
+
+
+class PreferencesOut(StrictModel):
+    """The preferences as the account holds them, plus what is actually in use."""
+
+    locale: str
+    timezone: str | None
+    # The zone the server is cutting local days with right now — the stored one,
+    # or the instance default when the account never chose. A Settings row that
+    # says "Montréal" should be able to mean it, not mean "inherited, probably
+    # UTC", which is the old invisible behaviour.
+    effective_timezone: str
+    # `UTC-5` style label, computed server-side: a zone name alone does not tell
+    # a reader whether daylight time is in effect today.
+    utc_offset: str
 
 
 class AuthOut(StrictModel):

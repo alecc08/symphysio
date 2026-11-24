@@ -11,7 +11,9 @@ import {
   type ReactNode,
 } from "react";
 
-import { CheckDrawIcon, UndoIcon } from "../components/icons/Ui";
+import { UndoIcon } from "../components/icons/Ui";
+import { CheckDrawIcon } from "../components/icons/Ui";
+import { useI18n } from "../i18n";
 
 export interface ToastOptions {
   label: string;
@@ -36,6 +38,7 @@ const toneClasses: Record<NonNullable<ToastOptions["tone"]>, string> = {
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const [toast, setToast] = useState<(ToastOptions & { key: number }) | null>(null);
   const timer = useRef<number | null>(null);
 
@@ -85,7 +88,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 className="flex items-center gap-1.5 rounded-full bg-black/15 px-3 py-1.5 text-sm font-bold"
               >
                 <UndoIcon className="h-4 w-4" />
-                Undo
+                {t("toast.undo")}
               </button>
             ) : null}
           </div>

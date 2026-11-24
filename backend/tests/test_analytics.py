@@ -107,6 +107,40 @@ def test_a_streak_counts_when_utc_is_already_a_day_ahead(
     assert body["exercise_streak_days"] == 4
 
 
+def test_an_accounts_time_zone_sets_the_day_frame(client: TestClient, monkeypatch) -> None:
+    """The zone on the account, not the newest row, decides where "today" is.
+
+    Same data as the UTC-is-a-day-ahead test above, logged from UTC-5, but the
+    account has said it lives somewhere else. Reading it in the account's frame
+    breaks the streak — and that is the honest answer: the app is not allowed to
+    invent a streak by choosing whichever frame flatters the number.
+    """
+    register(client, timezone="Pacific/Kiritimati")  # UTC+14
+    monkeypatch.setattr(analytics, "now_utc", lambda: EST_EVENING)
+    _log_evenings(client, [1, 2, 3, 4], WEST_OF_UTC)
+    body = client.get("/api/v1/analytics/summary", params={"days": 30}).json()
+    assert body["exercise_streak_days"] == 0
+
+
+def test_the_rows_keep_their_own_offsets_when_the_zone_changes(client: TestClient) -> None:
+    """Changing the zone moves the *frame*, never the history.
+
+    Every entry was written with the offset the device saw at that instant, and
+    the hour-of-day and daily buckets are cut with it. Re-deriving last month from
+    today's zone would redraw the insights without anyone asking.
+    """
+    register(client, timezone="America/Toronto")
+    _seed_lag_pattern(client)
+    before = client.get("/api/v1/analytics/time-of-day", params={"days": 30}).json()
+    client.patch(
+        "/api/v1/auth/preferences",
+        json={"timezone": "Asia/Tokyo"},
+        headers=csrf_headers(client),
+    )
+    after = client.get("/api/v1/analytics/time-of-day", params={"days": 30}).json()
+    assert before == after
+
+
 def test_a_real_gap_still_breaks_the_streak(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -286,9 +320,32 @@ def test_csv_export(client: TestClient) -> None:
     assert "attachment;" in response.headers["content-disposition"]
     lines = response.text.strip().splitlines()
     assert len(lines) == 9  # header + 8 events
-    header = lines[0].split(",")
+    # The file opens with a UTF-8 BOM (Excel needs it to read the accented French
+    # header as UTF-8), so the first cell is compared after stripping it.
+    header = lines[0].lstrip("\ufeff").split(",")
     assert header[:4] == ["event_type", "id", "definition", "definition_id"]
     assert "Pelvic Floor Lifts" in response.text
+
+
+def test_csv_header_follows_the_account_language(client: TestClient) -> None:
+    """A French account's export opens in French — the header, not the data.
+
+    The values stay machine-readable on purpose (`exercise`, `pelvic_floor`), and
+    the names are the person's own rows, which is why "Relèvements du plancher
+    pelvien" appears without any translation table being involved.
+    """
+    register(client, locale="fr")
+    _seed_lag_pattern(client)
+    response = client.get("/api/v1/export/csv")
+    assert response.status_code == 200
+    lines = response.text.strip().splitlines()
+    header = lines[0].lstrip("\ufeff").split(",")
+    assert header[:4] == ["type_événement", "id", "nom", "id_définition"]
+    assert "gravité" in header
+    assert "Relèvements du plancher pelvien" in response.text
+    # Not translated: the enum a spreadsheet formula keys off.
+    kinds = {line.split(",", 1)[0] for line in lines[1:]}
+    assert kinds == {"symptom", "exercise"}
 
 
 def test_json_export_includes_definitions_and_logs(client: TestClient) -> None:

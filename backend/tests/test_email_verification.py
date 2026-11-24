@@ -1,6 +1,6 @@
 """Email confirmation: token lifecycle, sending, limits and the opt-in hard gate.
 
-Nothing here reaches the network: ``SYPHYSIO_MAIL_BACKEND=outbox`` swaps in an
+Nothing here reaches the network: ``SYMPHYSIO_MAIL_BACKEND=outbox`` swaps in an
 in-memory mailer, and ``ResendMailer`` is exercised against a stubbed transport.
 """
 
@@ -26,25 +26,25 @@ PUBLIC_URL = "https://symphysio.example.com"
 MAIL_EMAIL = "newest@example.com"
 
 BASE_ENV = {
-    "SYPHYSIO_COOKIE_SECURE": "0",
-    "SYPHYSIO_MIGRATIONS_DIR": str(MIGRATIONS),
-    "SYPHYSIO_RATE_LIMIT_ATTEMPTS": "4",
-    "SYPHYSIO_RATE_LIMIT_WINDOW": "60",
+    "SYMPHYSIO_COOKIE_SECURE": "0",
+    "SYMPHYSIO_MIGRATIONS_DIR": str(MIGRATIONS),
+    "SYMPHYSIO_RATE_LIMIT_ATTEMPTS": "4",
+    "SYMPHYSIO_RATE_LIMIT_WINDOW": "60",
 }
 MAIL_ENV = {
-    "SYPHYSIO_MAIL_BACKEND": "outbox",
+    "SYMPHYSIO_MAIL_BACKEND": "outbox",
     "RESEND_API_KEY": "re_never_used_in_tests",
-    "SYPHYSIO_EMAIL_FROM": "Symphysio <confirm@example.org>",
-    "SYPHYSIO_PUBLIC_URL": PUBLIC_URL,
+    "SYMPHYSIO_EMAIL_FROM": "Symphysio <confirm@example.org>",
+    "SYMPHYSIO_PUBLIC_URL": PUBLIC_URL,
 }
 
 
 def _configure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, db_name: str, **extra: str) -> None:
     for key, value in {
         **BASE_ENV,
-        "SYPHYSIO_DATA_DIR": str(tmp_path),
-        "SYPHYSIO_DB_PATH": str(tmp_path / db_name),
-        "SYPHYSIO_STATIC_DIR": str(tmp_path / "no-dist"),
+        "SYMPHYSIO_DATA_DIR": str(tmp_path),
+        "SYMPHYSIO_DB_PATH": str(tmp_path / db_name),
+        "SYMPHYSIO_STATIC_DIR": str(tmp_path / "no-dist"),
         **MAIL_ENV,
         **extra,
     }.items():
@@ -207,7 +207,7 @@ def test_five_wrong_guesses_trip_the_ip_limit(mail_client: TestClient) -> None:
     register_by_mail(mail_client)
     token = token_from(outbox(mail_client)[0])
     forged = token[:39] + "AAAA"
-    for _ in range(4):  # SYPHYSIO_RATE_LIMIT_ATTEMPTS=4 in this fixture
+    for _ in range(4):  # SYMPHYSIO_RATE_LIMIT_ATTEMPTS=4 in this fixture
         response = mail_client.post(
             "/api/v1/auth/verify", json={"token": forged}, headers=csrf_headers(mail_client)
         )
@@ -222,7 +222,7 @@ def test_five_wrong_guesses_trip_the_ip_limit(mail_client: TestClient) -> None:
 def test_send_cap_per_account(mail_client: TestClient) -> None:
     register_by_mail(mail_client)
     headers = csrf_headers(mail_client)
-    # One send at signup plus two more, then capped (SYPHYSIO_EMAIL_SENDS_PER_HOUR=3).
+    # One send at signup plus two more, then capped (SYMPHYSIO_EMAIL_SENDS_PER_HOUR=3).
     for _ in range(2):
         assert (
             mail_client.post("/api/v1/auth/verify/resend", json={}, headers=headers).status_code
@@ -361,7 +361,7 @@ async def test_resend_transport_gives_up_without_raising(
 
 def test_no_key_never_builds_a_resend_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("RESEND_API_KEY", raising=False)
-    monkeypatch.setenv("SYPHYSIO_MAIL_BACKEND", "resend")
+    monkeypatch.setenv("SYMPHYSIO_MAIL_BACKEND", "resend")
     assert mailer_module.build_mailer(_mailer_settings(resend_api_key=None)).backend == "null"
 
 
@@ -371,7 +371,7 @@ def test_no_key_never_builds_a_resend_transport(monkeypatch: pytest.MonkeyPatch)
 def test_hard_mode_blocks_login_until_verified(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _configure(tmp_path, monkeypatch, "hard.sqlite", SYPHYSIO_EMAIL_CONFIRMATION="required")
+    _configure(tmp_path, monkeypatch, "hard.sqlite", SYMPHYSIO_EMAIL_CONFIRMATION="required")
     with TestClient(create_app()) as client:
         body = register_by_mail(client)
         assert body["user"]["is_verified"] is False
@@ -396,10 +396,10 @@ def test_hard_mode_without_email_refuses_to_start(
         tmp_path,
         monkeypatch,
         "none.sqlite",
-        SYPHYSIO_EMAIL_CONFIRMATION="required",
+        SYMPHYSIO_EMAIL_CONFIRMATION="required",
         RESEND_API_KEY="",
-        SYPHYSIO_EMAIL_FROM="",
-        SYPHYSIO_PUBLIC_URL="",
+        SYMPHYSIO_EMAIL_FROM="",
+        SYMPHYSIO_PUBLIC_URL="",
     )
     with pytest.raises(RuntimeError, match="no mail transport"), TestClient(create_app()):
         pass
@@ -414,9 +414,9 @@ def test_unconfigured_email_leaves_the_account_plain_usable(
         monkeypatch,
         "lan.sqlite",
         RESEND_API_KEY="",
-        SYPHYSIO_EMAIL_FROM="",
-        SYPHYSIO_PUBLIC_URL="",
-        SYPHYSIO_MAIL_BACKEND="null",
+        SYMPHYSIO_EMAIL_FROM="",
+        SYMPHYSIO_PUBLIC_URL="",
+        SYMPHYSIO_MAIL_BACKEND="null",
     )
     with TestClient(create_app()) as client:
         body = register_by_mail(client)
@@ -433,10 +433,10 @@ def test_the_admin_can_turn_the_whole_flow_off(
 ) -> None:
     """Mail may be configured for other reasons; that must not force nagging.
 
-    With SYPHYSIO_EMAIL_CONFIRMATION=off nothing is mailed, no token row exists,
+    With SYMPHYSIO_EMAIL_CONFIRMATION=off nothing is mailed, no token row exists,
     accounts are born confirmed, and asking for a link is refused.
     """
-    _configure(tmp_path, monkeypatch, "off.sqlite", SYPHYSIO_EMAIL_CONFIRMATION="off")
+    _configure(tmp_path, monkeypatch, "off.sqlite", SYMPHYSIO_EMAIL_CONFIRMATION="off")
     with TestClient(create_app()) as client:
         body = register_by_mail(client)
         assert body["user"]["is_verified"] is True
@@ -456,6 +456,6 @@ def test_an_unknown_confirmation_mode_refuses_to_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A typo in the mode must not quietly mean "whatever the default was"."""
-    _configure(tmp_path, monkeypatch, "typo.sqlite", SYPHYSIO_EMAIL_CONFIRMATION="yes-please")
-    with pytest.raises(ValueError, match="SYPHYSIO_EMAIL_CONFIRMATION"), TestClient(create_app()):
+    _configure(tmp_path, monkeypatch, "typo.sqlite", SYMPHYSIO_EMAIL_CONFIRMATION="yes-please")
+    with pytest.raises(ValueError, match="SYMPHYSIO_EMAIL_CONFIRMATION"), TestClient(create_app()):
         pass

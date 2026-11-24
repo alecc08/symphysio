@@ -13,8 +13,12 @@ import type {
   Suggestion,
   SymptomDefinition,
 } from "../api/types";
+import { categoryLabel, regionLabel } from "../lib/enums";
 import { presetBody, type PresetInput } from "../lib/presets";
+import type { Translate } from "../lib/timeLabels";
 import { useQuickLog } from "../lib/useQuickLog";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n/en";
 import { useCatalog } from "../state/catalog";
 import { useToast } from "../state/toast";
 import { Sheet } from "./Sheet";
@@ -30,40 +34,57 @@ const DEFAULT_SEVERITY = 5;
 
 const SHEET_META: Record<
   SheetKind,
-  { title: string; subtitle: string; tone: "physio" | "symptom" | "relief" | "trigger"; kind: CatalogKind }
+  {
+    titleKey: MessageKey;
+    subtitleKey: MessageKey;
+    tone: "physio" | "symptom" | "relief" | "trigger";
+    kind: CatalogKind;
+  }
 > = {
-  physio: { title: "Physio", subtitle: "Tap the exercise you did.", tone: "physio", kind: "exercises" },
+  physio: {
+    titleKey: "quick.physioTitle",
+    subtitleKey: "quick.physioSubtitle",
+    tone: "physio",
+    kind: "exercises",
+  },
   symptoms: {
-    title: "Symptoms",
-    subtitle: "Pick severity, then the symptom.",
+    titleKey: "quick.symptomsTitle",
+    subtitleKey: "quick.symptomsSubtitle",
     tone: "symptom",
     kind: "symptoms",
   },
-  relief: { title: "Relief / Meds", subtitle: "What you took or tried.", tone: "relief", kind: "contexts" },
+  relief: {
+    titleKey: "quick.reliefTitle",
+    subtitleKey: "quick.reliefSubtitle",
+    tone: "relief",
+    kind: "contexts",
+  },
   triggers: {
-    title: "Triggers / Activity",
-    subtitle: "What might have set it off.",
+    titleKey: "quick.triggersTitle",
+    subtitleKey: "quick.triggersSubtitle",
     tone: "trigger",
     kind: "contexts",
   },
 };
 
-function doseFor(item: ExerciseDefinition): string {
+function doseFor(item: ExerciseDefinition, t: Translate): string {
   const parts: string[] = [];
   if (item.default_sets != null && item.default_reps != null)
     parts.push(`${item.default_sets}×${item.default_reps}`);
-  else if (item.default_sets != null) parts.push(`${item.default_sets} sets`);
-  else if (item.default_reps != null) parts.push(`${item.default_reps} reps`);
-  if (item.default_sec != null) parts.push(`${item.default_sec}s`);
-  if (item.body_region) parts.push(item.body_region.replaceAll("_", " "));
+  else if (item.default_sets != null) parts.push(t("metric.sets", { count: item.default_sets }));
+  else if (item.default_reps != null) parts.push(t("metric.reps", { count: item.default_reps }));
+  if (item.default_sec != null) parts.push(t("metric.seconds", { count: item.default_sec }));
+  if (item.body_region) parts.push(regionLabel(item.body_region, t));
   return parts.join(" · ");
 }
 
-function subtitleFor(kind: SheetKind, item: { name: string }): string {
-  if (kind === "physio") return doseFor(item as ExerciseDefinition);
-  if (kind === "symptoms")
-    return ((item as SymptomDefinition).body_region ?? "").replaceAll("_", " ");
-  return (item as ContextDefinition).category;
+function subtitleFor(kind: SheetKind, item: { name: string }, t: Translate): string {
+  if (kind === "physio") return doseFor(item as ExerciseDefinition, t);
+  if (kind === "symptoms") {
+    const region = (item as SymptomDefinition).body_region;
+    return region ? regionLabel(region, t) : "";
+  }
+  return categoryLabel((item as ContextDefinition).category, t);
 }
 
 export function QuickSheet({
@@ -77,6 +98,7 @@ export function QuickSheet({
 }) {
   const catalog = useCatalog();
   const toast = useToast();
+  const { t } = useI18n();
   const { log } = useQuickLog(onLogged);
   const meta = SHEET_META[kind];
 
@@ -139,9 +161,9 @@ export function QuickSheet({
         }),
       );
       setNewName("");
-      toast.show({ label: `Added: ${trimmed}` });
+      toast.show({ label: t("quick.added", { name: trimmed }) });
     } catch (error) {
-      toast.show({ label: error instanceof Error ? error.message : "Could not add" });
+      toast.show({ label: error instanceof Error ? error.message : t("quick.addFailed") });
     }
   }
 
@@ -149,11 +171,11 @@ export function QuickSheet({
     try {
       await catalog.patch(meta.kind, item.id, { is_archived: true });
       toast.show({
-        label: `Removed: ${item.name}`,
+        label: t("quick.removed", { name: item.name }),
         undo: () => void catalog.patch(meta.kind, item.id, { is_archived: false }),
       });
     } catch {
-      toast.show({ label: "Could not remove" });
+      toast.show({ label: t("quick.removeFailed") });
     }
   }
 
@@ -173,7 +195,7 @@ export function QuickSheet({
           pain_during: skipped ? null : pain,
           occurred_at_utc: at,
         },
-        skipped ? `Skipped: ${item.name}` : `Logged: ${item.name}`,
+        skipped ? t("quick.skipped", { name: item.name }) : t("quick.logged", { name: item.name }),
       );
       if (ok) onClose();
       return;
@@ -193,7 +215,9 @@ export function QuickSheet({
           duration_min: durationMin,
           occurred_at_utc: at,
         },
-        chosen ? `Logged: ${item.name} · ${value}/10` : `Logged: ${item.name} · 5 (default)`,
+        chosen
+          ? t("quick.loggedSeverity", { name: item.name, score: value })
+          : t("quick.loggedDefault", { name: item.name }),
       );
       if (ok) onClose();
       return;
@@ -201,13 +225,18 @@ export function QuickSheet({
     const ok = await log(
       "context",
       { context_id: item.id, intensity, occurred_at_utc: at },
-      `Logged: ${item.name}`,
+      t("quick.logged", { name: item.name }),
     );
     if (ok) onClose();
   };
 
   return (
-    <Sheet title={meta.title} subtitle={meta.subtitle} tone={meta.tone} onClose={onClose}>
+    <Sheet
+      title={t(meta.titleKey)}
+      subtitle={t(meta.subtitleKey)}
+      tone={meta.tone}
+      onClose={onClose}
+    >
       {kind === "symptoms" ? (
         <SeverityScale
           value={severity ?? DEFAULT_SEVERITY}
@@ -227,7 +256,7 @@ export function QuickSheet({
               aria-expanded={showDetails}
               className="text-sm font-semibold text-muted underline decoration-dotted"
             >
-              {showDetails ? "Hide effort & pain" : "Add effort / pain (optional)"}
+              {showDetails ? t("quick.hideEffort") : t("quick.addEffort")}
             </button>
             {/* One control that changes what a tile tap means, rather than a second
                 set of tiles: skipping is the common case, and it should not need a
@@ -240,18 +269,15 @@ export function QuickSheet({
                 skipped ? "border-trigger bg-trigger text-white" : "border-line text-muted"
               }`}
             >
-              Did not do it today
+              {t("quick.didNotDoIt")}
             </button>
           </div>
           {skipped ? (
-            <p className="mt-2 text-xs leading-snug text-muted">
-              Tapping an exercise will log it as skipped — it still counts as keeping
-              track, and it is left out of the “what follows a session” maths.
-            </p>
+            <p className="mt-2 text-xs leading-snug text-muted">{t("quick.skipNote")}</p>
           ) : null}
           {showDetails ? (
             <>
-              <SeverityScale value={effort} onChange={setEffort} label="Effort (RPE)" />
+              <SeverityScale value={effort} onChange={setEffort} labelKey="effort.rpe" />
               <PainRow value={pain} onChange={setPain} />
             </>
           ) : null}
@@ -259,7 +285,11 @@ export function QuickSheet({
       ) : null}
 
       {kind === "relief" || kind === "triggers" ? (
-        <SeverityScale value={intensity} onChange={setIntensity} label="Intensity (optional)" />
+        <SeverityScale
+          value={intensity}
+          onChange={setIntensity}
+          labelKey="quick.intensityOptional"
+        />
       ) : null}
 
       <TimeChips value={occurredAt} onChange={setOccurredAt} />
@@ -276,13 +306,13 @@ export function QuickSheet({
                 {item.name}
               </span>
               <span className="mt-1 block text-xs font-semibold opacity-75">
-                {subtitleFor(kind, item)}
+                {subtitleFor(kind, item, t)}
               </span>
             </button>
             <button
               type="button"
               onClick={() => void removePreset(item)}
-              aria-label={`Remove ${item.name}`}
+              aria-label={t("quick.removeAria", { name: item.name })}
               className="absolute -top-1.5 -right-1.5 rounded-full border border-line bg-card p-1 text-muted shadow-sm"
             >
               <CloseIcon className="h-3 w-3" />
@@ -297,7 +327,7 @@ export function QuickSheet({
           className="flex min-h-[4.5rem] items-center justify-center gap-2 rounded-2xl border border-dashed border-line bg-card text-sm font-bold text-muted"
         >
           <PlusIcon className="h-4 w-4" />
-          Add preset
+          {t("quick.addPreset")}
         </button>
       </div>
 
@@ -308,7 +338,9 @@ export function QuickSheet({
               autoFocus
               value={newName}
               maxLength={80}
-              placeholder={kind === "symptoms" ? "e.g. Pressure when standing" : "New preset name"}
+              placeholder={
+                kind === "symptoms" ? t("quick.symptomPresetExample") : t("quick.newPresetPlaceholder")
+              }
               onChange={(event) => setNewName(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void addPreset({ name: newName });
@@ -321,12 +353,12 @@ export function QuickSheet({
               disabled={!newName.trim()}
               className="rounded-lg bg-physio px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
             >
-              Add
+              {t("common.add")}
             </button>
           </div>
           {suggestions.length > 0 ? (
             <>
-              <p className="mt-3 text-xs font-semibold text-muted">Or tap a suggestion</p>
+              <p className="mt-3 text-xs font-semibold text-muted">{t("quick.suggestions")}</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {suggestions.map((suggestion) => (
                   <button
@@ -344,18 +376,16 @@ export function QuickSheet({
         </div>
       ) : null}
 
-      <p className="mt-4 text-xs text-muted">
-        Presets are yours — add, remove and reorder them here or in Settings. Removed presets keep
-        their history.
-      </p>
+      <p className="mt-4 text-xs text-muted">{t("quick.presetOwnership")}</p>
     </Sheet>
   );
 }
 
 function PainRow({ value, onChange }: { value: number | null; onChange: (value: number) => void }) {
+  const { t } = useI18n();
   return (
     <div className="mt-4">
-      <div className="text-xs font-semibold text-muted">Pain during</div>
+      <div className="text-xs font-semibold text-muted">{t("quick.painDuring")}</div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {Array.from({ length: 11 }, (_, index) => index).map((number) => (
           <button

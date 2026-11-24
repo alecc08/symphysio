@@ -43,13 +43,13 @@ def test_junk_in_the_chain_is_skipped_not_believed() -> None:
 
 
 def test_a_bad_proxy_list_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SYPHYSIO_TRUSTED_PROXIES", "172.16.0.0/12, definitely-not-a-cidr")
-    with pytest.raises(ValueError, match="SYPHYSIO_TRUSTED_PROXIES"):
+    monkeypatch.setenv("SYMPHYSIO_TRUSTED_PROXIES", "172.16.0.0/12, definitely-not-a-cidr")
+    with pytest.raises(ValueError, match="SYMPHYSIO_TRUSTED_PROXIES"):
         get_settings()
 
 
 def test_the_proxy_list_is_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SYPHYSIO_TRUSTED_PROXIES", "172.16.0.0/12, 10.0.0.5")
+    monkeypatch.setenv("SYMPHYSIO_TRUSTED_PROXIES", "172.16.0.0/12, 10.0.0.5")
     assert get_settings().trusted_proxies == ("172.16.0.0/12", "10.0.0.5/32")
 
 
@@ -86,8 +86,8 @@ def test_behind_a_configured_proxy_each_visitor_gets_own_budget(
         tmp_path,
         monkeypatch,
         "proxied.sqlite",
-        SYPHYSIO_TRUSTED_PROXIES="172.17.0.0/16",
-        SYPHYSIO_RATE_LIMIT_ATTEMPTS="1",
+        SYMPHYSIO_TRUSTED_PROXIES="172.17.0.0/16",
+        SYMPHYSIO_RATE_LIMIT_ATTEMPTS="1",
     )
     with TestClient(create_app(), client=(TRAEFIK, 4321)) as client:
         assert _login(client, "198.51.100.7") == 401

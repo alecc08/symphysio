@@ -19,16 +19,20 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..db import Database
-from ..deps import AuthedUser, get_db
+from ..deps import AuthedUser, LocaleDep, get_db, get_settings
+from ..i18n import t
 from ..ids import now_utc
 from ..insights.association import Window, analyse
 from ..insights.events import Event, load_events
 from ..insights.rollup import adherence, series
 from ..insights.sufficiency import coverage, eligible_pair_count
 from ..profiles import PROFILES
+from ..settings import Settings
+from ..timezones import effective, has_zone_setting, offset_minutes
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 DbDep = Annotated[Database, Depends(get_db)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 DAY_SECONDS = 86_400
 ExposureKind = Annotated[str, Query(pattern="^(exercise|context|both)$")]
 
@@ -49,7 +53,9 @@ def _profile_windows(profile_key: str) -> list[Window]:
     return [Window(label=label, min_hours=low, max_hours=high) for label, low, high in rows]
 
 
-def _choose_window(windows: list[Window], wanted: str | None, default: str) -> Window:
+def _choose_window(
+    windows: list[Window], wanted: str | None, default: str, locale: str
+) -> Window:
     """The profile's windows are the only ones offered.
 
     Free-form windows are how you fish for a pattern: the same diary shows a
@@ -63,7 +69,7 @@ def _choose_window(windows: list[Window], wanted: str | None, default: str) -> W
             return window
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail="Unknown window; try one of " + ", ".join(item.label for item in windows),
+        detail=t("err.bad_window", locale, windows=", ".join(item.label for item in windows)),
     )
 
 
@@ -72,6 +78,12 @@ async def _latest_offset(db: Database, user_id: str) -> int:
 
     Reading only `exercise_logs` used to make "today" wrong for anyone whose
     latest entry was a symptom — which, for a week of resting, is most weeks.
+
+    This is the *last* clue the server uses now, not the first: an account that
+    chose a time zone, or an instance that set SYMPHYSIO_DEFAULT_TIMEZONE, answers
+    from the zone (which is also correct across a DST change). It remains the
+    fallback for an account that predates the setting and never opened Settings,
+    which is exactly the situation it was written for.
     """
     row = await db.row(
         "SELECT tz_offset_min FROM v_unified_timeline WHERE user_id = ?"
@@ -79,6 +91,22 @@ async def _latest_offset(db: Database, user_id: str) -> int:
         (user_id,),
     )
     return int(row["tz_offset_min"]) if row else 0
+
+
+async def _reference_offset(db: Database, user: dict[str, Any], settings: Settings) -> int:
+    """The UTC offset the *display* is cut in — not the one any row was written with.
+
+    Every bucket in this module is `occurred_at_utc + tz_offset_min * 60`: each row
+    keeps the offset its own device reported at its own instant, so a diary logged
+    across a DST change or a trip stays where the person experienced it. What the
+    account setting decides is the other question — where "today", "this week" and
+    the streak boundary sit right now — and answering it from the newest row was a
+    guess that failed on an empty diary (UTC) and on a phone that had travelled.
+    """
+    zone = effective(user.get("timezone"), default=settings.default_timezone)
+    if has_zone_setting(user.get("timezone"), settings.default_timezone):
+        return offset_minutes(zone, now_utc())
+    return await _latest_offset(db, str(user["id"]))
 
 
 async def _totals(db: Database, user_id: str, since: int) -> dict[str, Any]:
@@ -147,7 +175,7 @@ async def _top(db: Database, user_id: str, since: int, kind: str, limit: int) ->
     return await db.rows(sql, (user_id, since, limit))
 
 
-async def _streak(db: Database, user_id: str, since: int) -> int:
+async def _streak(db: Database, user_id: str, since: int, offset: int) -> int:
     rows = await db.rows(
         "SELECT DISTINCT CAST((occurred_at_utc + tz_offset_min * 60) / 86400 AS INTEGER)"
         " AS day_index FROM exercise_logs WHERE user_id = ? AND occurred_at_utc >= ?",
@@ -161,7 +189,6 @@ async def _streak(db: Database, user_id: str, since: int) -> int:
     # local day index against a UTC one reports a broken streak for anyone west of
     # UTC during the hours when the two calendars disagree: measured for UTC-5 at
     # 19:50 EST (= 00:50 UTC the next day), where four evenings in a row answered 0.
-    offset = await _latest_offset(db, user_id)
     if (now_utc() + offset * 60) // DAY_SECONDS - latest > 1:
         return 0  # streak broke: nothing logged today or yesterday
     streak = 0
@@ -174,10 +201,11 @@ async def _streak(db: Database, user_id: str, since: int) -> int:
 async def summary(
     user: AuthedUser,
     db: DbDep,
+    settings: SettingsDep,
     days: Annotated[int, Query(ge=1, le=365)] = 30,
 ) -> dict[str, Any]:
     since = _since(days)
-    offset = await _latest_offset(db, user["id"])
+    offset = await _reference_offset(db, user, settings)
     events = await load_events(db, user["id"], since)
     points = series(
         events,
@@ -206,7 +234,7 @@ async def summary(
         "coverage": gate.as_dict(),
         "top_exercises": await _top(db, user["id"], since, "exercise", 10),
         "top_symptoms": await _top(db, user["id"], since, "symptom", 10),
-        "exercise_streak_days": await _streak(db, user["id"], since),
+        "exercise_streak_days": await _streak(db, user["id"], since, offset),
     }
 
 
@@ -225,6 +253,8 @@ def _per_definition(events: Sequence[Event]) -> dict[str, list[int]]:
 async def associations(
     user: AuthedUser,
     db: DbDep,
+    settings: SettingsDep,
+    locale: LocaleDep,
     days: Annotated[int, Query(ge=7, le=730)] = 90,
     window: Annotated[str | None, Query(max_length=40)] = None,
     exposure: ExposureKind = "both",
@@ -239,7 +269,7 @@ async def associations(
     """
     profile = PROFILES.get(str(user.get("profile_key") or ""), None) or PROFILES["none"]
     windows = _profile_windows(profile.key)
-    chosen = _choose_window(windows, window, profile.default_window)
+    chosen = _choose_window(windows, window, profile.default_window, locale)
     since = _since(days)
     events = await load_events(db, user["id"], since)
     kinds = ("exercise", "context") if exposure == "both" else (exposure,)
@@ -324,6 +354,8 @@ async def symptom_trend(
     definition_id: str,
     user: AuthedUser,
     db: DbDep,
+    settings: SettingsDep,
+    locale: LocaleDep,
     days: Annotated[int, Query(ge=7, le=730)] = 90,
     baseline_days: Annotated[int, Query(ge=3, le=90)] = 14,
 ) -> dict[str, Any]:
@@ -339,10 +371,12 @@ async def symptom_trend(
         (definition_id, user["id"]),
     )
     if found is None:
-        raise HTTPException(status_code=404, detail="Unknown symptom definition")
+        raise HTTPException(
+            status_code=404, detail=t("err.unknown_symptom", locale)
+        )
 
     since = _since(days)
-    offset = await _latest_offset(db, user["id"])
+    offset = await _reference_offset(db, user, settings)
     events = await load_events(db, user["id"], since)
     # Only this symptom's rows count as symptoms here; the exercise rows ride
     # along so the same rollup produces honest adherence next to the trend.

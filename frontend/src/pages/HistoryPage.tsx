@@ -4,20 +4,24 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import type { PlanEvent, TimelineItem } from "../api/types";
-import { describeMetric, formatClock, formatDay, relativeLabel } from "../lib/time";
-import { useToast } from "../state/toast";
 import { Sheet } from "../components/Sheet";
 import { SeverityScale } from "../components/SeverityScale";
 import { TimeChips } from "../components/TimeChips";
 import { CalendarIcon, ClockIcon, PencilIcon, TrashIcon } from "../components/icons/Ui";
 import { PhysioIcon, ReliefIcon, SymptomIcon, TriggerIcon } from "../components/icons/Tile";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n/en";
+import { categoryLabel, planKindLabel } from "../lib/enums";
+import { formatters } from "../lib/time";
+import { describeMetric, relativeLabel } from "../lib/timeLabels";
+import { useToast } from "../state/toast";
 
-const FILTERS = [
-  { id: "", label: "All" },
-  { id: "exercise", label: "Physio" },
-  { id: "symptom", label: "Symptoms" },
-  { id: "context", label: "Context" },
-] as const;
+const FILTERS: { id: string; labelKey: MessageKey }[] = [
+  { id: "", labelKey: "filter.all" },
+  { id: "exercise", labelKey: "filter.physio" },
+  { id: "symptom", labelKey: "filter.symptoms" },
+  { id: "context", labelKey: "filter.context" },
+];
 
 /** One line in the feed: a log entry, or a plan event sitting between them. */
 type FeedRow =
@@ -45,6 +49,8 @@ function KindGlyph({ item }: { item: TimelineItem }) {
 
 export function HistoryPage() {
   const toast = useToast();
+  const { t, tag } = useI18n();
+  const fmt = formatters(tag);
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [planEvents, setPlanEvents] = useState<PlanEvent[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
@@ -97,7 +103,7 @@ export function HistoryPage() {
     try {
       await api.deleteLog(item.event_type, item.id);
       toast.show({
-        label: `Deleted: ${item.definition_name ?? "entry"}`,
+        label: t("history.deleted", { name: item.definition_name ?? t("history.entry") }),
         tone: "danger",
         undo: async () => {
           const body = rebuildBody(item);
@@ -108,14 +114,14 @@ export function HistoryPage() {
         },
       });
     } catch {
-      toast.show({ label: "Could not delete", tone: "danger" });
+      toast.show({ label: t("history.deleteFailed"), tone: "danger" });
       await load();
     }
   };
 
   return (
     <div className="px-4 pb-24 pt-2">
-      <h1 className="text-2xl font-extrabold tracking-tight">History</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight">{t("history.title")}</h1>
       {/* Wraps rather than scrolls: four filter chips that need a swipe to see are
           worse than two rows, and a clipped chip is not a choice. */}
       <div className="mt-3 flex flex-wrap gap-2">
@@ -131,7 +137,7 @@ export function HistoryPage() {
                 : "border-line bg-card text-muted"
             }`}
           >
-            {entry.label}
+            {t(entry.labelKey)}
           </button>
         ))}
       </div>
@@ -151,9 +157,9 @@ export function HistoryPage() {
                   {row.event.text}
                 </p>
                 <p className="truncate text-xs text-muted">
-                  {formatDay(row.event.occurred_at_utc)} ·{" "}
-                  {relativeLabel(row.event.occurred_at_utc)} · plan:{" "}
-                  {row.event.kind.replace("_", " ")}
+                  {fmt.day(row.event.occurred_at_utc)} ·{" "}
+                  {relativeLabel(row.event.occurred_at_utc, t, tag)} ·{" "}
+                  {t("plan.prefix", { kind: planKindLabel(row.event.kind, t) })}
                 </p>
               </div>
             </li>
@@ -167,17 +173,17 @@ export function HistoryPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[0.95rem] font-bold">
-                  {row.item.definition_name ?? "Unknown"}
+                  {row.item.definition_name ?? t("common.unknown")}
                   {row.item.category ? (
                     <span className="ml-2 text-xs font-semibold text-muted">
-                      {row.item.category}
+                      {categoryLabel(row.item.category, t)}
                     </span>
                   ) : null}
                 </p>
                 <p className="truncate text-xs text-muted">
-                  {formatDay(row.item.occurred_at_utc)} {formatClock(row.item.occurred_at_utc)} ·{" "}
-                  {relativeLabel(row.item.occurred_at_utc)}
-                  {describeMetric(row.item) ? ` · ${describeMetric(row.item)}` : ""}
+                  {fmt.day(row.item.occurred_at_utc)} {fmt.clock(row.item.occurred_at_utc)} ·{" "}
+                  {relativeLabel(row.item.occurred_at_utc, t, tag)}
+                  {describeMetric(row.item, t) ? ` · ${describeMetric(row.item, t)}` : ""}
                 </p>
                 {row.item.note ? (
                   <p className="mt-1 truncate text-xs text-ink/70">{row.item.note}</p>
@@ -186,7 +192,9 @@ export function HistoryPage() {
               <button
                 type="button"
                 onClick={() => setEditing(row.item)}
-                aria-label={`Edit ${row.item.definition_name ?? "entry"}`}
+                aria-label={t("history.editAria", {
+                  name: row.item.definition_name ?? t("history.entry"),
+                })}
                 className="rounded-lg p-2 text-muted hover:bg-canvas"
               >
                 <PencilIcon className="h-5 w-5" />
@@ -194,7 +202,9 @@ export function HistoryPage() {
               <button
                 type="button"
                 onClick={() => void remove(row.item)}
-                aria-label={`Delete ${row.item.definition_name ?? "entry"}`}
+                aria-label={t("history.deleteAria", {
+                  name: row.item.definition_name ?? t("history.entry"),
+                })}
                 className="rounded-lg p-2 text-muted hover:bg-symptom-soft hover:text-symptom-ink"
               >
                 <TrashIcon className="h-5 w-5" />
@@ -205,10 +215,10 @@ export function HistoryPage() {
       </ul>
 
       {loading && rows.length === 0 ? (
-        <p className="mt-6 text-sm text-muted">Loading…</p>
+        <p className="mt-6 text-sm text-muted">{t("app.loading")}</p>
       ) : null}
       {!loading && rows.length === 0 ? (
-        <p className="mt-6 text-sm text-muted">Nothing logged in this filter yet.</p>
+        <p className="mt-6 text-sm text-muted">{t("history.empty")}</p>
       ) : null}
 
       {nextBefore !== null ? (
@@ -218,7 +228,7 @@ export function HistoryPage() {
           disabled={loading}
           className="mt-4 w-full rounded-xl border border-line bg-card py-3 text-sm font-bold text-muted disabled:opacity-60"
         >
-          Load older
+          {t("history.loadOlder")}
         </button>
       ) : null}
 
@@ -273,12 +283,23 @@ function EditSheet({
   onSaved: () => void;
 }) {
   const toast = useToast();
+  const { t, tag } = useI18n();
+  const fmt = formatters(tag);
   const [metric, setMetric] = useState<number | null>(item.primary_metric);
   const [note, setNote] = useState(item.note ?? "");
   const [occurredAt, setOccurredAt] = useState(item.occurred_at_utc);
-  const tone = item.event_type === "symptom" ? "symptom" : item.event_type === "exercise" ? "physio" : "relief";
-  const label =
-    item.event_type === "symptom" ? "Severity" : item.event_type === "exercise" ? "Effort (RPE)" : "Intensity";
+  const tone =
+    item.event_type === "symptom"
+      ? "symptom"
+      : item.event_type === "exercise"
+        ? "physio"
+        : "relief";
+  const labelKey: MessageKey =
+    item.event_type === "symptom"
+      ? "severity.label"
+      : item.event_type === "exercise"
+        ? "effort.rpe"
+        : "intensity.label";
 
   async function save() {
     try {
@@ -291,19 +312,24 @@ function EditSheet({
             ? { effort_rpe: metric }
             : { intensity: metric }),
       });
-      toast.show({ label: "Updated", tone });
+      toast.show({ label: t("history.updated"), tone });
       onSaved();
     } catch {
-      toast.show({ label: "Could not save changes", tone: "danger" });
+      toast.show({ label: t("history.saveFailed"), tone: "danger" });
     }
   }
 
   return (
-    <Sheet title={item.definition_name ?? "Edit entry"} subtitle="Changes keep the original id" tone={tone} onClose={onClose}>
-      <SeverityScale value={metric} onChange={setMetric} label={label} />
+    <Sheet
+      title={item.definition_name ?? t("history.editEntry")}
+      subtitle={t("history.changesKeepId")}
+      tone={tone}
+      onClose={onClose}
+    >
+      <SeverityScale value={metric} onChange={setMetric} labelKey={labelKey} />
       <TimeChips value={occurredAt} onChange={setOccurredAt} />
       <label className="mt-4 block text-xs font-semibold text-muted" htmlFor="note">
-        Note
+        {t("history.note")}
       </label>
       <textarea
         id="note"
@@ -312,19 +338,21 @@ function EditSheet({
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         className="mt-1.5 w-full rounded-xl border border-line bg-canvas px-3 py-2.5 text-base"
-        placeholder="What made it better or worse?"
+        placeholder={t("history.notePlaceholder")}
       />
       <div className="mt-4 flex items-center gap-2">
         <span className="flex items-center gap-1.5 text-xs text-muted">
           <ClockIcon className="h-4 w-4" />
-          logged {formatDay(item.logged_at_utc ?? item.occurred_at_utc)}
+          {t("history.loggedOn", {
+            day: fmt.day(item.logged_at_utc ?? item.occurred_at_utc),
+          })}
         </span>
         <button
           type="button"
           onClick={() => void save()}
           className="ms-auto rounded-xl bg-physio px-5 py-3 text-sm font-bold text-white"
         >
-          Save
+          {t("common.save")}
         </button>
       </div>
     </Sheet>

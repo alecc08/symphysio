@@ -56,12 +56,12 @@ Everything above is enough for a LAN or Tailscale install. Exposing it to the
 whole internet means four more decisions, all cheap:
 
 1. **Close the front door.** Sign up your own accounts, then set
-   `SYPHYSIO_ALLOW_REGISTRATION=0`. Registration is open by default (the first
+   `SYMPHYSIO_ALLOW_REGISTRATION=0`. Registration is open by default (the first
    account has to come from somewhere) and a public host gets scanned within
    hours. `POST /auth/register` then answers `403` — after the IP limiter, so
    probing it is not free for the prober.
 2. **Tell it where your proxy is**, or the login limiter is theatre in one of two
-   directions. With `SYPHYSIO_TRUSTED_PROXIES` empty, the client address is the
+   directions. With `SYMPHYSIO_TRUSTED_PROXIES` empty, the client address is the
    socket peer — behind Traefik that is the proxy container, so one visitor's typo
    locks out every other visitor. Make it too wide and a caller can forge
    `X-Forwarded-For` and buy an unlimited number of guesses (that was the behaviour
@@ -69,7 +69,7 @@ whole internet means four more decisions, all cheap:
    your proxy actually connects from — for Docker, its own network's CIDR:
 
    ```bash
-   SYPHYSIO_TRUSTED_PROXIES=172.17.0.0/16     # traefik's docker network, not the LAN
+   SYMPHYSIO_TRUSTED_PROXIES=172.17.0.0/16     # traefik's docker network, not the LAN
    ```
 
    Nothing needs masking in the proxy's access log: the confirmation link carries
@@ -114,29 +114,52 @@ which inherits the right ownership automatically.
 Everything is an environment variable; there is no config file and nothing secret
 is baked into the image. See `.env.example`.
 
+### 0.3.0 renamed the prefix, and there is no alias
+
+Up to and including 0.2.0 the app read `SYPHYSIO_*` — a misspelling of its own
+name, which every deployment file had already quietly corrected to
+`SYMPHYSIO_*`. 0.3.0 reads the correct spelling and **only** that one, and
+refuses to start if the old one is still in the environment:
+
+```
+ValueError: SYPHYSIO_DATA_DIR uses the pre-0.3.0 spelling and is now ignored.
+Rename it to SYMPHYSIO_DATA_DIR before starting: an unset SYMPHYSIO_DATA_DIR
+would open a new empty database, an unset SYMPHYSIO_TRUSTED_PROXIES would give
+every visitor one rate-limit budget, and an unset SYMPHYSIO_ALLOW_REGISTRATION
+would open sign-up.
+```
+
+That error is the whole design. Silently ignoring a renamed variable is how a
+deploy ends up with a fresh empty database where the diary used to be, so the
+choice was to make it impossible to start with the old names rather than to
+translate them for a release or two. **Deploying 0.3.0 means editing the
+`environment:` block in the same change that moves the image**, and nothing else:
+the database, the cookies and the API are unaffected.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SYPHYSIO_DATA_DIR` | `./data` | where the SQLite file lives; in the image, `/data` |
-| `SYPHYSIO_DB_PATH` | `$DATA_DIR/symphysio.sqlite` | explicit database path |
-| `SYPHYSIO_STATIC_DIR` | `../frontend/dist` | compiled SPA; the image bakes `/app/static` |
-| `SYPHYSIO_MIGRATIONS_DIR` | `./migrations` | forward-only `.sql` files |
-| `SYPHYSIO_COOKIE_SECURE` | `1` | `Secure` on both cookies; set `0` only for plain-HTTP dev on a non-localhost origin |
-| `SYPHYSIO_SESSION_TTL_DAYS` | `30` | session lifetime (rolled forward at half-life) |
-| `SYPHYSIO_MAX_BODY_BYTES` | `262144` | request body cap, enforced before parsing |
-| `SYPHYSIO_TRUSTED_PROXIES` | *(empty)* | space or comma separated CIDRs of *your* proxy. Empty means the socket peer is the client address (one shared budget behind a proxy); only then is `X-Forwarded-For` read |
-| `SYPHYSIO_ALLOW_REGISTRATION` | `1` | `0` closes sign-up — `POST /auth/register` answers `403`. Set it to `0` on anything the internet can see, once your own accounts exist |
-| `SYPHYSIO_RATE_LIMIT` | `1` | `0` disables auth rate limiting (dev only) |
-| `SYPHYSIO_RATE_LIMIT_ATTEMPTS` | `10` | attempts per window, per IP and per email |
-| `SYPHYSIO_RATE_LIMIT_WINDOW` | `900` | sliding window, seconds |
-| `SYPHYSIO_RATE_LIMIT_LOCKOUT` | `900` | lockout after the window fills, seconds |
+| `SYMPHYSIO_DATA_DIR` | `./data` | where the SQLite file lives; in the image, `/data` |
+| `SYMPHYSIO_DB_PATH` | `$DATA_DIR/symphysio.sqlite` | explicit database path |
+| `SYMPHYSIO_STATIC_DIR` | `../frontend/dist` | compiled SPA; the image bakes `/app/static` |
+| `SYMPHYSIO_MIGRATIONS_DIR` | `./migrations` | forward-only `.sql` files |
+| `SYMPHYSIO_COOKIE_SECURE` | `1` | `Secure` on both cookies; set `0` only for plain-HTTP dev on a non-localhost origin |
+| `SYMPHYSIO_SESSION_TTL_DAYS` | `30` | session lifetime (rolled forward at half-life) |
+| `SYMPHYSIO_MAX_BODY_BYTES` | `262144` | request body cap, enforced before parsing |
+| `SYMPHYSIO_TRUSTED_PROXIES` | *(empty)* | space or comma separated CIDRs of *your* proxy. Empty means the socket peer is the client address (one shared budget behind a proxy); only then is `X-Forwarded-For` read |
+| `SYMPHYSIO_ALLOW_REGISTRATION` | `1` | `0` closes sign-up — `POST /auth/register` answers `403`. Set it to `0` on anything the internet can see, once your own accounts exist |
+| `SYMPHYSIO_RATE_LIMIT` | `1` | `0` disables auth rate limiting (dev only) |
+| `SYMPHYSIO_RATE_LIMIT_ATTEMPTS` | `10` | attempts per window, per IP and per email |
+| `SYMPHYSIO_RATE_LIMIT_WINDOW` | `900` | sliding window, seconds |
+| `SYMPHYSIO_RATE_LIMIT_LOCKOUT` | `900` | lockout after the window fills, seconds |
 | `RESEND_API_KEY` | unset | Resend key; with a sender and a public URL, email switches on |
-| `SYPHYSIO_EMAIL_FROM` | unset | `From:` on confirmation mail, e.g. `Symphysio <confirm@mail.example.org>` |
-| `SYPHYSIO_EMAIL_REPLY_TO` | unset | optional `Reply-To:` |
-| `SYPHYSIO_PUBLIC_URL` | unset | absolute origin used **only** for the link host, e.g. `https://symphysio.example.org` |
-| `SYPHYSIO_MAIL_BACKEND` | `resend` if configured, else `null` | `resend`, `outbox` (write `.eml` files to the data dir, never send) or `null` |
-| `SYPHYSIO_EMAIL_TTL_SECONDS` | `86400` | how long a confirmation link works (floor 300) |
-| `SYPHYSIO_EMAIL_SENDS_PER_HOUR` | `3` | per-account send budget, counted in the database |
-| `SYPHYSIO_EMAIL_CONFIRMATION` | `optional` | `off` = no confirmation mail at all; `optional` = link + banner, never blocks; `required` = sign-in blocked until clicked (refuses to start with no mail transport) |
+| `SYMPHYSIO_EMAIL_FROM` | unset | `From:` on confirmation mail, e.g. `Symphysio <confirm@mail.example.org>` |
+| `SYMPHYSIO_EMAIL_REPLY_TO` | unset | optional `Reply-To:` |
+| `SYMPHYSIO_PUBLIC_URL` | unset | absolute origin used **only** for the link host, e.g. `https://symphysio.example.org` |
+| `SYMPHYSIO_MAIL_BACKEND` | `resend` if configured, else `null` | `resend`, `outbox` (write `.eml` files to the data dir, never send) or `null` |
+| `SYMPHYSIO_EMAIL_TTL_SECONDS` | `86400` | how long a confirmation link works (floor 300) |
+| `SYMPHYSIO_EMAIL_SENDS_PER_HOUR` | `3` | per-account send budget, counted in the database |
+| `SYMPHYSIO_EMAIL_CONFIRMATION` | `optional` | `off` = no confirmation mail at all; `optional` = link + banner, never blocks; `required` = sign-in blocked until clicked (refuses to start with no mail transport) |
+| `SYMPHYSIO_DEFAULT_TIMEZONE` | `UTC` | IANA zone for accounts that never chose one in Settings — set it to where your users are (`America/Toronto`). It never overrides an account that did choose, and it never re-derives stored rows. A name `zoneinfo` cannot resolve stops the container at startup rather than quietly meaning UTC |
 
 ## Outbound email (optional)
 
@@ -158,11 +181,11 @@ To turn it on with Resend:
 3. **Create an API key** and put it in the environment as `RESEND_API_KEY`
    (`docker-compose.yml` reads it from the host environment; it is not
    committed).
-4. Set `SYPHYSIO_EMAIL_FROM` to an address on that domain and
-   `SYPHYSIO_PUBLIC_URL` to the origin your phone actually reaches. The link host
+4. Set `SYMPHYSIO_EMAIL_FROM` to an address on that domain and
+   `SYMPHYSIO_PUBLIC_URL` to the origin your phone actually reaches. The link host
    comes from this variable, never from the request's `Host` header, so a reverse
    proxy in front does not change what lands in the mail.
-5. Choose `SYPHYSIO_EMAIL_CONFIRMATION`. `optional` (the default) sends the link
+5. Choose `SYMPHYSIO_EMAIL_CONFIRMATION`. `optional` (the default) sends the link
    and shows a reminder but never locks anyone out — a postnatal user whose mail
    went to spam should not be shut out of their own diary. `off` skips the whole
    business if you would rather not run outbound mail for this app at all, and
@@ -171,10 +194,10 @@ To turn it on with Resend:
 Developing without sending anything:
 
 ```bash
-SYPHYSIO_MAIL_BACKEND=outbox \
-SYPHYSIO_PUBLIC_URL=https://symphysio.test \
+SYMPHYSIO_MAIL_BACKEND=outbox \
+SYMPHYSIO_PUBLIC_URL=https://symphysio.test \
 RESEND_API_KEY=dev_never_real \
-SYPHYSIO_EMAIL_FROM='Symphysio <confirm@example.org>' \
+SYMPHYSIO_EMAIL_FROM='Symphysio <confirm@example.org>' \
 uvicorn app.main:app
 ```
 
@@ -200,18 +223,18 @@ person tapping a phone.
 
 ```bash
 cd backend && uv sync --frozen
-SYPHYSIO_DATA_DIR=/var/lib/symphysio uv run uvicorn app.main:app --port 8090
+SYMPHYSIO_DATA_DIR=/var/lib/symphysio uv run uvicorn app.main:app --port 8090
 ```
 
 Build the SPA first (`cd frontend && npm ci && npm run build`), or point
-`SYPHYSIO_STATIC_DIR` at a checkout of `frontend/dist`. Under systemd, run as a
+`SYMPHYSIO_STATIC_DIR` at a checkout of `frontend/dist`. Under systemd, run as a
 dedicated user and give it only the data directory:
 
 ```ini
 [Service]
 User=symphysio
 Group=symphysio
-Environment=SYPHYSIO_DATA_DIR=/var/lib/symphysio
+Environment=SYMPHYSIO_DATA_DIR=/var/lib/symphysio
 ExecStart=/usr/local/bin/uvicorn app.main:app --host 127.0.0.1 --port 8090
 ProtectSystem=strict
 ReadWritePaths=/var/lib/symphysio

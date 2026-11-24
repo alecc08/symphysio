@@ -7,8 +7,8 @@ Lifting* day far more often than on a day without one — so the "what follows a
 session" card has something genuinely there to find, and severity trends gently
 downward. The README and docs/media screenshots came from exactly this seed.
 
-    SYPHYSIO_DATA_DIR=$HOME/scratch/sypdemo SYPHYSIO_MAIL_BACKEND=null \
-      SYPHYSIO_COOKIE_SECURE=0 uv run uvicorn app.main:app --port 8011
+    SYMPHYSIO_DATA_DIR=$HOME/scratch/sypdemo SYMPHYSIO_MAIL_BACKEND=null \
+      SYMPHYSIO_COOKIE_SECURE=0 uv run uvicorn app.main:app --port 8011
     python3 scripts/demo_seed.py            # then open http://127.0.0.1:8011
 
 Running it twice against the same database doubles the data rather than failing,
@@ -22,13 +22,13 @@ from datetime import UTC, datetime, timedelta
 import httpx
 
 random.seed(7)
-BASE = os.environ.get("SYPHYSIO_DEMO_URL", "http://127.0.0.1:8011") + "/api/v1"
+BASE = os.environ.get("SYMPHYSIO_DEMO_URL", "http://127.0.0.1:8011") + "/api/v1"
 # The demo account's credentials. Overridable so the script can point at any
 # install; the defaults are invented and are the one value gitleaks is told to
 # ignore (see .gitleaks.toml) - they guard a throwaway account full of made-up
 # logs, and the screenshots in this repo are built on them.
-EMAIL = os.environ.get("SYPHYSIO_DEMO_EMAIL", "demo@symphysio.example")
-PASSPHRASE = os.environ.get("SYPHYSIO_DEMO_PASSPHRASE", "sunlit-origami-42")
+EMAIL = os.environ.get("SYMPHYSIO_DEMO_EMAIL", "demo@symphysio.example")
+PASSPHRASE = os.environ.get("SYMPHYSIO_DEMO_PASSPHRASE", "sunlit-origami-42")
 client = httpx.Client(base_url=BASE, timeout=30)
 
 # Register on a fresh install, log in on one that has been seeded already.

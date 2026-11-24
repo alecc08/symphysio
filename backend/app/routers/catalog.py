@@ -18,9 +18,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..db import Database
-from ..deps import AuthedUser, get_db
+from ..deps import AuthedUser, ClientLocaleDep, LocaleDep, get_db
+from ..i18n import t
 from ..ids import new_id
-from ..profiles import PROFILES
+from ..presets_fr import profile_copy
+from ..profiles import PROFILES, Profile
 from ..schemas import (
     ContextDefinitionCreate,
     ContextDefinitionUpdate,
@@ -102,10 +104,12 @@ KINDS: dict[str, dict[str, Any]] = {
 }
 
 
-def _kind(kind: str) -> dict[str, Any]:
+def _kind(kind: str, locale: str) -> dict[str, Any]:
     cfg = KINDS.get(kind)
     if cfg is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown catalog kind")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=t("err.bad_catalog_kind", locale)
+        )
     return cfg
 
 
@@ -145,7 +149,9 @@ async def _list(
     return [_out(row) for row in await db.rows(sql, params)]
 
 
-async def _create(db: Database, user_id: str, cfg: dict[str, Any], payload: Any) -> dict[str, Any]:
+async def _create(
+    db: Database, user_id: str, cfg: dict[str, Any], payload: Any, locale: str
+) -> dict[str, Any]:
     data = payload.model_dump()
     columns = cfg["create_cols"]
     if data.get("sort_order") is None:
@@ -162,7 +168,7 @@ async def _create(db: Database, user_id: str, cfg: dict[str, Any], payload: Any)
     except sqlite3.IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="You already have a catalog item with that name.",
+            detail=t("err.duplicate_name", locale),
         ) from None
     row = await db.row(
         f"SELECT {cfg['select_cols']} FROM {cfg['table']} WHERE id = ? AND user_id = ?",
@@ -172,7 +178,12 @@ async def _create(db: Database, user_id: str, cfg: dict[str, Any], payload: Any)
 
 
 async def _patch(
-    db: Database, user_id: str, cfg: dict[str, Any], definition_id: str, payload: Any
+    db: Database,
+    user_id: str,
+    cfg: dict[str, Any],
+    definition_id: str,
+    payload: Any,
+    locale: str,
 ) -> dict[str, Any]:
     columns = cfg["update_cols"]
     table = cfg["table"]
@@ -181,7 +192,9 @@ async def _patch(
         (definition_id, user_id),
     )
     if found is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Catalog item not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=t("err.catalog_not_found", locale)
+        )
     merged = {**found, **payload.model_dump(exclude_unset=True)}
     merged["is_archived"] = 1 if merged.get("is_archived") else 0
     assignments = ", ".join(f"{column} = ?" for column in columns)
@@ -193,7 +206,7 @@ async def _patch(
     except sqlite3.IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="You already have a catalog item with that name.",
+            detail=t("err.duplicate_name", locale),
         ) from None
     row = await db.row(
         f"SELECT {cfg['select_cols']} FROM {table} WHERE id = ? AND user_id = ?",
@@ -213,28 +226,36 @@ async def _existing_names(db: Database, user_id: str, table: str) -> set[str]:
 
 
 @router.get("/profiles", response_model=list[ProfileOut])
-async def list_profiles() -> list[ProfileOut]:
+async def list_profiles(locale: ClientLocaleDep) -> list[ProfileOut]:
     """The starting sets offered at sign-up. Public on purpose.
 
     The picker lives on the sign-up card, so there is no session yet to authorise
     with — and the payload is the same for everyone: names, counts and lag
     windows, never any account data. Ordered as the picker should show them, with
     "Start empty" first.
+
+    The labels follow the request's `Accept-Language`, which the SPA sets from its
+    own toggle: this is the one endpoint a person sees before they have an account
+    to hold a preference, and choosing a language only works at sign-up because
+    the presets are seeded in it.
     """
-    return [
-        ProfileOut(
-            key=profile.key,
-            label=profile.label,
-            blurb=profile.blurb,
-            counts=profile.counts,
-            windows=[
-                WindowOut(label=label, min_hours=low, max_hours=high)
-                for label, low, high in sorted(profile.windows, key=lambda row: (row[1], row[2]))
-            ],
-            default_window=profile.default_window,
-        )
-        for profile in PROFILES.values()
-    ]
+    return [_profile_out(profile, locale) for profile in PROFILES.values()]
+
+
+def _profile_out(profile: Profile, locale: str) -> ProfileOut:
+    """One picker row, in the language being asked for."""
+    label, blurb = profile_copy(profile.key, locale, label=profile.label, blurb=profile.blurb)
+    return ProfileOut(
+        key=profile.key,
+        label=label,
+        blurb=blurb,
+        counts=profile.counts,
+        windows=[
+            WindowOut(label=name, min_hours=low, max_hours=high)
+            for name, low, high in sorted(profile.windows, key=lambda row: (row[1], row[2]))
+        ],
+        default_window=profile.default_window,
+    )
 
 
 @router.get("/exercises")
@@ -245,20 +266,30 @@ async def list_exercises(
 
 
 @router.get("/exercises/suggestions")
-async def suggest_exercises(user: AuthedUser, db: DbDep) -> list[dict[str, Any]]:
-    return suggestions("exercises", await _existing_names(db, user["id"], "exercise_definitions"))
+async def suggest_exercises(
+    user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> list[dict[str, Any]]:
+    return suggestions(
+        "exercises", await _existing_names(db, user["id"], "exercise_definitions"), locale
+    )
 
 
 @router.post("/exercises", status_code=status.HTTP_201_CREATED)
-async def create_exercise(payload: ExerciseDefinitionCreate, user: AuthedUser, db: DbDep) -> dict:
-    return await _create(db, user["id"], KINDS["exercises"], payload)
+async def create_exercise(
+    payload: ExerciseDefinitionCreate, user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> dict:
+    return await _create(db, user["id"], KINDS["exercises"], payload, locale)
 
 
 @router.patch("/exercises/{definition_id}")
 async def patch_exercise(
-    definition_id: str, payload: ExerciseDefinitionUpdate, user: AuthedUser, db: DbDep
+    definition_id: str,
+    payload: ExerciseDefinitionUpdate,
+    user: AuthedUser,
+    db: DbDep,
+    locale: LocaleDep,
 ) -> dict:
-    return await _patch(db, user["id"], KINDS["exercises"], definition_id, payload)
+    return await _patch(db, user["id"], KINDS["exercises"], definition_id, payload, locale)
 
 
 @router.post("/exercises/reorder")
@@ -274,20 +305,30 @@ async def list_symptoms(
 
 
 @router.get("/symptoms/suggestions")
-async def suggest_symptoms(user: AuthedUser, db: DbDep) -> list[dict[str, Any]]:
-    return suggestions("symptoms", await _existing_names(db, user["id"], "symptom_definitions"))
+async def suggest_symptoms(
+    user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> list[dict[str, Any]]:
+    return suggestions(
+        "symptoms", await _existing_names(db, user["id"], "symptom_definitions"), locale
+    )
 
 
 @router.post("/symptoms", status_code=status.HTTP_201_CREATED)
-async def create_symptom(payload: SymptomDefinitionCreate, user: AuthedUser, db: DbDep) -> dict:
-    return await _create(db, user["id"], KINDS["symptoms"], payload)
+async def create_symptom(
+    payload: SymptomDefinitionCreate, user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> dict:
+    return await _create(db, user["id"], KINDS["symptoms"], payload, locale)
 
 
 @router.patch("/symptoms/{definition_id}")
 async def patch_symptom(
-    definition_id: str, payload: SymptomDefinitionUpdate, user: AuthedUser, db: DbDep
+    definition_id: str,
+    payload: SymptomDefinitionUpdate,
+    user: AuthedUser,
+    db: DbDep,
+    locale: LocaleDep,
 ) -> dict:
-    return await _patch(db, user["id"], KINDS["symptoms"], definition_id, payload)
+    return await _patch(db, user["id"], KINDS["symptoms"], definition_id, payload, locale)
 
 
 @router.post("/symptoms/reorder")
@@ -308,20 +349,30 @@ async def list_contexts(
 
 
 @router.get("/contexts/suggestions")
-async def suggest_contexts(user: AuthedUser, db: DbDep) -> list[dict[str, Any]]:
-    return suggestions("contexts", await _existing_names(db, user["id"], "context_definitions"))
+async def suggest_contexts(
+    user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> list[dict[str, Any]]:
+    return suggestions(
+        "contexts", await _existing_names(db, user["id"], "context_definitions"), locale
+    )
 
 
 @router.post("/contexts", status_code=status.HTTP_201_CREATED)
-async def create_context(payload: ContextDefinitionCreate, user: AuthedUser, db: DbDep) -> dict:
-    return await _create(db, user["id"], KINDS["contexts"], payload)
+async def create_context(
+    payload: ContextDefinitionCreate, user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> dict:
+    return await _create(db, user["id"], KINDS["contexts"], payload, locale)
 
 
 @router.patch("/contexts/{definition_id}")
 async def patch_context(
-    definition_id: str, payload: ContextDefinitionUpdate, user: AuthedUser, db: DbDep
+    definition_id: str,
+    payload: ContextDefinitionUpdate,
+    user: AuthedUser,
+    db: DbDep,
+    locale: LocaleDep,
 ) -> dict:
-    return await _patch(db, user["id"], KINDS["contexts"], definition_id, payload)
+    return await _patch(db, user["id"], KINDS["contexts"], definition_id, payload, locale)
 
 
 @router.post("/contexts/reorder")

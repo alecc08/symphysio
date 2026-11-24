@@ -1,18 +1,21 @@
 /* Three tabs only. Settings live behind the top-right gear. */
 
+import type { MessageKey } from "../i18n/en";
+import { useI18n } from "../i18n";
 import { GridIcon, HistoryIcon, InsightsIcon } from "./icons/Ui";
 
 export type Tab = "log" | "history" | "insights";
 
-const TABS: { id: Tab; label: string; icon: (className: string) => React.ReactNode }[] = [
-  { id: "log", label: "Log", icon: (c) => <GridIcon className={c} /> },
-  { id: "history", label: "History", icon: (c) => <HistoryIcon className={c} /> },
-  { id: "insights", label: "Insights", icon: (c) => <InsightsIcon className={c} /> },
+const TABS: { id: Tab; labelKey: MessageKey; icon: (className: string) => React.ReactNode }[] = [
+  { id: "log", labelKey: "nav.log", icon: (c) => <GridIcon className={c} /> },
+  { id: "history", labelKey: "nav.history", icon: (c) => <HistoryIcon className={c} /> },
+  { id: "insights", labelKey: "nav.insights", icon: (c) => <InsightsIcon className={c} /> },
 ];
 
 export function BottomNav({ value, onChange }: { value: Tab; onChange: (tab: Tab) => void }) {
+  const { t } = useI18n();
   return (
-    <nav className="app-shell fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-lg justify-around border-t border-line bg-card/95 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur">
+    <nav aria-label={t("nav.main")} className="app-shell fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-lg justify-around border-t border-line bg-card/95 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur">
       {TABS.map((tab) => {
         const active = value === tab.id;
         return (
@@ -26,7 +29,7 @@ export function BottomNav({ value, onChange }: { value: Tab; onChange: (tab: Tab
             }`}
           >
             {tab.icon("h-6 w-6")}
-            <span>{tab.label}</span>
+            <span>{t(tab.labelKey)}</span>
           </button>
         );
       })}

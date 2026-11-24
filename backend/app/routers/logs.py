@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import ValidationError
 
 from ..db import Database
-from ..deps import AuthedUser, get_db
+from ..deps import AuthedUser, LocaleDep, get_db
+from ..i18n import t
 from ..ids import new_id, now_utc
 from ..schemas import (
     ContextLogCreate,
@@ -111,7 +112,9 @@ DEF_SELECT = {
 }
 
 
-async def _require_definition(db: Database, user_id: str, kind: str, definition_id: str) -> dict:
+async def _require_definition(
+    db: Database, user_id: str, kind: str, definition_id: str, locale: str
+) -> dict:
     row = await db.row(
         f"SELECT {DEF_SELECT[kind]} FROM {DEF_TABLES[kind]} WHERE id = ? AND user_id = ?",  # noqa: S608
         (definition_id, user_id),
@@ -119,12 +122,17 @@ async def _require_definition(db: Database, user_id: str, kind: str, definition_
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Unknown {kind} definition: {definition_id}",
+            detail=t(
+                "err.unknown_definition",
+                locale,
+                kind=t(f"kind.{kind}", locale),
+                definition_id=definition_id,
+            ),
         )
     if row["is_archived"]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"That {kind} is archived; unarchive it first.",
+            detail=t("err.archived_definition", locale, kind=t(f"kind.{kind}", locale)),
         )
     return row
 
@@ -142,10 +150,14 @@ def _created(log_id: str, kind: str) -> dict[str, Any]:
     return {"id": log_id, "event_type": kind, "status": "created"}
 
 
-async def _load_log(db: Database, user_id: str, kind: str, log_id: str) -> dict[str, Any]:
+async def _load_log(
+    db: Database, user_id: str, kind: str, log_id: str, locale: str
+) -> dict[str, Any]:
     row = await db.row(SELECT_LOG[kind], (log_id, user_id))
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log entry not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=t("err.log_not_found", locale)
+        )
     row["id"] = log_id
     row["event_type"] = kind
     return row
@@ -156,8 +168,12 @@ def _pick(value: Any, fallback: Any) -> Any:
 
 
 @router.post("/logs/exercises", status_code=status.HTTP_201_CREATED)
-async def log_exercise(payload: ExerciseLogCreate, user: AuthedUser, db: DbDep) -> dict[str, Any]:
-    definition = await _require_definition(db, user["id"], "exercise", payload.exercise_id)
+async def log_exercise(
+    payload: ExerciseLogCreate, user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> dict[str, Any]:
+    definition = await _require_definition(
+        db, user["id"], "exercise", payload.exercise_id, locale
+    )
     sets_done = _pick(payload.sets_done, definition.get("default_sets"))
     reps_done = _pick(payload.reps_done, definition.get("default_reps"))
     duration_sec = _pick(payload.duration_sec, definition.get("default_sec"))
@@ -183,8 +199,12 @@ async def log_exercise(payload: ExerciseLogCreate, user: AuthedUser, db: DbDep) 
 
 
 @router.post("/logs/symptoms", status_code=status.HTTP_201_CREATED)
-async def log_symptom(payload: SymptomLogCreate, user: AuthedUser, db: DbDep) -> dict[str, Any]:
-    definition = await _require_definition(db, user["id"], "symptom", payload.symptom_id)
+async def log_symptom(
+    payload: SymptomLogCreate, user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> dict[str, Any]:
+    definition = await _require_definition(
+        db, user["id"], "symptom", payload.symptom_id, locale
+    )
     log_id = new_id()
     await db.execute(
         INSERTS["symptom"],
@@ -206,8 +226,10 @@ async def log_symptom(payload: SymptomLogCreate, user: AuthedUser, db: DbDep) ->
 
 
 @router.post("/logs/contexts", status_code=status.HTTP_201_CREATED)
-async def log_context(payload: ContextLogCreate, user: AuthedUser, db: DbDep) -> dict[str, Any]:
-    await _require_definition(db, user["id"], "context", payload.context_id)
+async def log_context(
+    payload: ContextLogCreate, user: AuthedUser, db: DbDep, locale: LocaleDep
+) -> dict[str, Any]:
+    await _require_definition(db, user["id"], "context", payload.context_id, locale)
     log_id = new_id()
     await db.execute(
         INSERTS["context"],
@@ -291,19 +313,26 @@ async def timeline(
 
 @router.patch("/logs/{event_type}/{log_id}")
 async def patch_log(
-    event_type: EventTypeLiteral, log_id: str, request: Request, user: AuthedUser, db: DbDep
+    event_type: EventTypeLiteral,
+    log_id: str,
+    request: Request,
+    user: AuthedUser,
+    db: DbDep,
+    locale: LocaleDep,
 ) -> dict[str, Any]:
     model = UPDATE_MODELS[event_type]
     try:
         payload = model.model_validate(await request.json())
     except (ValidationError, JSONDecodeError):
         raise HTTPException(
-            status_code=422, detail="Invalid update payload"
+            status_code=422, detail=t("err.bad_update", locale)
         ) from None
     columns = EDIT_COLUMNS[event_type]
     found = await db.row(SELECT_LOG[event_type], (log_id, user["id"]))
     if found is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log entry not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=t("err.log_not_found", locale)
+        )
     merged = {**found, **payload.model_dump(exclude_unset=True)}
     if event_type == "symptom" and "severity" in payload.model_dump(exclude_unset=True):
         # A hand-edited number is a chosen number. History edits are exactly how a
@@ -313,16 +342,18 @@ async def patch_log(
         UPDATE_LOG[event_type],
         [merged[column] for column in columns] + [log_id, user["id"]],
     )
-    return await _load_log(db, user["id"], event_type, log_id)
+    return await _load_log(db, user["id"], event_type, log_id, locale)
 
 
 @router.delete("/logs/{event_type}/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_log(
-    event_type: EventTypeLiteral, log_id: str, user: AuthedUser, db: DbDep
+    event_type: EventTypeLiteral, log_id: str, user: AuthedUser, db: DbDep, locale: LocaleDep
 ) -> None:
     deleted = await db.execute(
         f"DELETE FROM {LOG_TABLES[event_type]} WHERE id = ? AND user_id = ?",  # noqa: S608
         (log_id, user["id"]),
     )
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log entry not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=t("err.log_not_found", locale)
+        )

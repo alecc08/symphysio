@@ -44,11 +44,11 @@ RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin symphysio \
 
 USER 10001
 
-ENV SYPHYSIO_DATA_DIR=/data \
-    SYPHYSIO_DB_PATH=/data/symphysio.sqlite \
-    SYPHYSIO_STATIC_DIR=/app/static \
-    SYPHYSIO_MIGRATIONS_DIR=/app/migrations \
-    SYPHYSIO_COOKIE_SECURE=1
+ENV SYMPHYSIO_DATA_DIR=/data \
+    SYMPHYSIO_DB_PATH=/data/symphysio.sqlite \
+    SYMPHYSIO_STATIC_DIR=/app/static \
+    SYMPHYSIO_MIGRATIONS_DIR=/app/migrations \
+    SYMPHYSIO_COOKIE_SECURE=1
 
 EXPOSE 8000
 

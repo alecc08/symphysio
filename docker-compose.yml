@@ -11,23 +11,26 @@ services:
     ports:
       - "127.0.0.1:8090:8000"
     environment:
-      SYPHYSIO_COOKIE_SECURE: "1"
-      SYPHYSIO_SESSION_TTL_DAYS: "30"
-      SYPHYSIO_RATE_LIMIT: "1"
-      SYPHYSIO_RATE_LIMIT_ATTEMPTS: "10"
+      SYMPHYSIO_COOKIE_SECURE: "1"
+      SYMPHYSIO_SESSION_TTL_DAYS: "30"
+      SYMPHYSIO_RATE_LIMIT: "1"
+      SYMPHYSIO_RATE_LIMIT_ATTEMPTS: "10"
       # Where your reverse proxy is, as CIDRs. The client address the auth limiter
       # keys on is the socket peer unless that peer is one of these; only then is
       # X-Forwarded-For believed. Behind Traefik on Docker the peer is the traefik
       # container, so name the network it connects from - not the whole LAN, which
       # would let any device forge its address and guess without limit. Left empty
       # (as here), every visitor shares one login budget.
-      # SYPHYSIO_TRUSTED_PROXIES: "172.17.0.0/16"
+      # SYMPHYSIO_TRUSTED_PROXIES: "172.17.0.0/16"
       # Once your own accounts exist, close the front door if anything outside
       # your own network can reach this host (docs/DEPLOYING.md).
-      # SYPHYSIO_ALLOW_REGISTRATION: "0"
+      # SYMPHYSIO_ALLOW_REGISTRATION: "0"
       # off | optional | required. "off" if you would rather this app never send
       # mail at all; leaving it unset means "optional".
-      # SYPHYSIO_EMAIL_CONFIRMATION: "optional"
+      # SYMPHYSIO_EMAIL_CONFIRMATION: "optional"
+      # Where your users live, for accounts that never picked a zone in Settings.
+      # Never overrides an account that did choose, never rewrites logged rows.
+      # SYMPHYSIO_DEFAULT_TIMEZONE: "America/Toronto"
     volumes:
       # A named volume keeps ownership right (the image runs as uid 10001).
       - symphysio-data:/data

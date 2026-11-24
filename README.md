@@ -85,7 +85,7 @@ npm run dev
 ```
 
 For plain-HTTP local development the browser still accepts the session cookie on
-`localhost`, but if you serve over a LAN IP set `SYPHYSIO_COOKIE_SECURE=0`.
+`localhost`, but if you serve over a LAN IP set `SYMPHYSIO_COOKIE_SECURE=0`.
 
 Seed data: registration creates 10 exercise, 10 symptom and 16 relief/trigger
 presets, all editable in the quick-log drawer and in **Settings → Quick-tap
@@ -156,7 +156,9 @@ GitHub Actions runs all of the above on every push and pull request, plus:
 | **History** | Unified chronological feed with filters, inline edit (severity, note, time) and delete with Undo. Plan events (appointments, programme changes, medication) ride in the same feed. |
 | **Insights** | Counts and streak, gap-filled daily bars, whole-week adherence, one symptom against its own first two weeks, hour-of-day distribution, top presets, and a "what follows a session?" card that compares each exercise against matched control windows and says one of four fixed words about it. Charts are hand-built from divs, no chart dependency. |
 | **Settings** | Catalog manager (add / rename / reorder / remove / restore, plus a suggested-preset pool), CSV and JSON export, sign out one or all devices. |
-| **Account** | Sign-up picks a starting set from six tracking profiles (after childbirth, bladder & bowel, low back & girdle, shoulder & neck, hip & knee, or start empty) — presets only, never a restriction. Optional email confirmation (Resend, or nothing at all): a single-use 24 h link, a reminder banner, and a gate that is the admin's choice — `off`, `optional` (default) or `required`. Password reset by email link, token in the URL fragment. Sign-up itself can be closed with `SYPHYSIO_ALLOW_REGISTRATION=0`. |
+| **Language** | English and Québec French (`fr-CA`), chosen at sign-up or in Settings and remembered on the account *and* the device. It reaches the parts an English-only app hides: the server's own error text, the emailed links, the CSV header row, and how numbers and clock labels read — `4,6` and `9 h 05` in French, `4.6` and `9:05 a.m.` in English. Preset names are seeded in the language you signed up in and are never re-translated afterwards: those rows are your diary, not the app's chrome. |
+| **Time zone** | The account can name its IANA zone (or fall back to the device, or to the server's `SYMPHYSIO_DEFAULT_TIMEZONE`), which decides where the day starts. Entries keep the offset they were written with, so changing it never redraws history. |
+| **Account** | Sign-up picks a starting set from six tracking profiles (after childbirth, bladder & bowel, low back & girdle, shoulder & neck, hip & knee, or start empty) — presets only, never a restriction. Optional email confirmation (Resend, or nothing at all): a single-use 24 h link, a reminder banner, and a gate that is the admin's choice — `off`, `optional` (default) or `required`. Password reset by email link, token in the URL fragment. Sign-up itself can be closed with `SYMPHYSIO_ALLOW_REGISTRATION=0`. |
 | **API** | `/api/v1` JSON only: auth, catalog, logs, timeline, analytics, export. Contract in [docs/API.md](docs/API.md). |
 
 ## Documentation
@@ -182,9 +184,12 @@ panel rebuilt to say only what a small diary can support (charts are hand-built,
 no chart dependency), the tracking profiles offered at sign-up, plan events, and
 password reset. Email confirmation is built — a hashed single-use token and a
 24 h link — and it is the operator's choice how much it matters:
-`SYPHYSIO_EMAIL_CONFIRMATION` is `off`, `optional` (default: link plus a reminder
+`SYMPHYSIO_EMAIL_CONFIRMATION` is `off`, `optional` (default: link plus a reminder
 banner, never a lockout) or `required`. With no mail transport configured the app
-behaves as if it were off.
+behaves as if it were off. Since 0.3.0 the whole app speaks English and Québec
+French, and a day boundary is an account setting instead of a guess — which
+renamed every environment variable, see
+[docs/DEPLOYING.md](docs/DEPLOYING.md).
 
 Next, in [docs/ROADMAP.md](docs/ROADMAP.md): **WebAuthn passkeys**.
 

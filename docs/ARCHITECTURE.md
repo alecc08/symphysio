@@ -24,7 +24,7 @@ a JSON API under `/api/v1` and a compiled React bundle everywhere else.
    `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, COOP/CORP and
    `Cache-Control: no-store` to every response.
 2. **`limit_body`** rejects anything whose `Content-Length` exceeds
-   `SYPHYSIO_MAX_BODY_BYTES` before the body is read or parsed.
+   `SYMPHYSIO_MAX_BODY_BYTES` before the body is read or parsed.
 3. **`csrf_guard`** requires the `X-CSRF-Token` header to match the readable
    `symphysio_csrf` cookie for state-changing `/api/v1` calls that carry a
    session cookie (`/auth/login` and `/auth/register` are exempt). On a safe
@@ -45,10 +45,14 @@ a JSON API under `/api/v1` and a compiled React bundle everywhere else.
 | `app/security.py` | Argon2id hashing, opaque token → SHA-256 storage, cookie issue/clear, CSRF compare |
 | `app/ratelimit.py` | Sliding-window auth rate limiter (per process) |
 | `app/password_policy.py` | ≥12 chars, no famous passwords, no email reuse, no runs |
+| `app/i18n.py` | the two locales, `Accept-Language` parsing with quality values, one `t()` for server-side copy |
+| `app/messages.py` | every string the server writes itself — errors, email bodies, CSV headers — as one `en`/`fr` table |
+| `app/presets_fr.py` | the French side of the shipped presets and the sign-up profiles, in one reviewable block |
+| `app/timezones.py` | the zone rules: account → header → instance default, `has_zone_setting` for the analytics frame, DST-safe day starts |
 | `app/ids.py` | UUIDv7 ids (time-ordered, index-friendly) + clock |
 | `app/seed.py` | default catalogs written at signup, plus the suggestion pool |
 | `app/schemas.py` | Pydantic v2 strict models (`strict=True`, `extra="forbid"`) |
-| `app/routers/auth.py` | register / login / logout / logout-all / me |
+| `app/routers/auth.py` | register / login / logout / logout-all / me / preferences |
 | `app/routers/catalog.py` | Preset CRUD, archive instead of delete, reorder |
 | `app/routers/logs.py` | Fast log writes, unified timeline, edit, delete (= Undo) |
 | `app/routers/analytics.py` | Daily summary, lag correlations, hour-of-day |
@@ -58,18 +62,27 @@ a JSON API under `/api/v1` and a compiled React bundle everywhere else.
 
 ```
 src/
-  api/client.ts        fetch wrapper: cookies + CSRF header, typed ApiError
+  api/client.ts        fetch wrapper: cookies + CSRF header, typed ApiError, and
+                       the Accept-Language / X-Timezone every request carries
   api/types.ts         mirrors docs/API.md
+  i18n/en.ts           every string, and the key type everything else checks
+  i18n/fr.ts           the same keys, typed as Record<MessageKey, string>, so a
+                       missing translation fails the build rather than the eye
+  i18n/resolve.ts      stored choice and navigator.language, with no imports
+  i18n/index.tsx       the provider: locale, t() with {count} plurals, html lang
   state/session.tsx    whoami / login / register / logout
   state/catalog.tsx    presets, add/patch/reorder, archived visibility
   state/toast.tsx      one Undo pill, 5 s
-  lib/time.ts          local-day labels, relative time
+  lib/time.ts          Intl formatters for one tag (en-CA / fr-CA)
+  lib/enums.ts         server tokens -> the word for them, in this language
+  lib/timeLabels.ts    relative time and metric captions, keyed not concatenated
   lib/presets.ts       one place that builds a per-kind create body (the three
                        kinds share no field names, so this is not inlined twice)
   lib/useQuickLog.ts   POST + Undo pill + refresh, shared by every drawer
   pages/               LogPage (grid), HistoryPage, InsightsPage, SettingsPage, AuthPage
   components/          Sheet, QuickSheet, TimeChips, SeverityScale, Charts,
-                       CatalogManager, BottomNav, icons/{Tile,Ui}
+                       CatalogManager, BottomNav, LanguageToggle, PreferencesCard,
+                       OfflineBanner, icons/{Tile,Ui}
   styles/animations.css  transform/opacity/dashoffset only
 ```
 

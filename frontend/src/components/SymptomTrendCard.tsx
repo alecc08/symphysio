@@ -12,13 +12,24 @@ import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { SymptomTrend } from "../api/types";
-import { formatDay } from "../lib/time";
+import { useI18n } from "../i18n";
+import { formatNumber, formatters } from "../lib/time";
 
-function Compare({ label, value, unit }: { label: string; value: number | null; unit: string }) {
+function Compare({
+  label,
+  value,
+  unit,
+  tag,
+}: {
+  label: string;
+  value: number | null;
+  unit: string;
+  tag: string;
+}) {
   return (
     <div className="rounded-xl bg-canvas px-2 py-2 text-center">
       <p className="text-base font-extrabold tabular-nums">
-        {value === null ? "—" : `${value}${unit}`}
+        {value === null ? "—" : `${formatNumber(value, tag)}${unit}`}
       </p>
       <p className="text-[0.65rem] font-semibold text-muted">{label}</p>
     </div>
@@ -26,6 +37,8 @@ function Compare({ label, value, unit }: { label: string; value: number | null; 
 }
 
 export function SymptomTrendCard({ definitionId }: { definitionId: string }) {
+  const { t, tag } = useI18n();
+  const fmt = formatters(tag);
   const [data, setData] = useState<SymptomTrend | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,11 +48,14 @@ export function SymptomTrendCard({ definitionId }: { definitionId: string }) {
     api
       .symptomTrend(definitionId, { days: 90 })
       .then(setData)
-      .catch(() => setError("Could not load this symptom's trend."));
+      .catch(() => setError(t("trend.loadFailed")));
+    // `t` is deliberately not a dependency: the fetch is keyed to the symptom,
+    // and re-fetching because the language changed would throw away the answer
+    // the person is already reading. The error text re-renders from `error`.
   }, [definitionId]);
 
   if (error) return <p className="mt-3 text-sm text-symptom-ink">{error}</p>;
-  if (!data) return <p className="mt-3 text-sm text-muted">Loading…</p>;
+  if (!data) return <p className="mt-3 text-sm text-muted">{t("app.loading")}</p>;
 
   const start = data.baseline.avg_severity;
   const now = data.recent.avg_severity;
@@ -50,44 +66,52 @@ export function SymptomTrendCard({ definitionId }: { definitionId: string }) {
   // situations and the card should not blur them.
   let missing: string | null = null;
   if (start === null && now === null) {
-    missing = `Nothing logged for this symptom in the last ${data.days} days.`;
+    missing = t("trend.noneInWindow", { days: data.days });
   } else if (start === null) {
-    missing = `No entries in its first ${data.baseline_days} here, so there is no starting point to compare against yet.`;
+    missing = t("trend.noBaseline", { days: data.baseline_days });
   } else if (now === null) {
-    missing = `Nothing logged since its first ${data.baseline_days} days — that itself is a result.`;
+    missing = t("trend.noRecent", { days: data.baseline_days });
   }
 
   return (
     <div>
       <p className="text-sm leading-snug">
-        <strong>{data.definition.name}</strong> · last {data.days} days, compared with
-        its first {data.baseline_days}.
+        <strong>{data.definition.name}</strong> ·{" "}
+        {t("trend.comparedWith", { days: data.days, baseline: data.baseline_days })}
       </p>
 
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <Compare label={`first ${data.baseline_days} days`} value={start} unit="" />
-        <Compare label="since" value={now} unit="" />
         <Compare
-          label="change"
+          label={t("trend.firstDays", { days: data.baseline_days })}
+          value={start}
+          unit=""
+          tag={tag}
+        />
+        <Compare label={t("trend.since")} value={now} unit="" tag={tag} />
+        <Compare
+          label={t("trend.change")}
           value={delta}
-          unit={delta === null ? "" : delta > 0 ? " worse" : delta < 0 ? " better" : ""}
+          unit={
+            delta === null ? "" : delta > 0 ? t("trend.unitWorse") : delta < 0 ? t("trend.unitBetter") : ""
+          }
+          tag={tag}
         />
       </div>
 
       <p className="mt-3 text-sm text-muted">
-        Logged on {data.adherence.days_with_any_log} of {data.adherence.days_covered} days.
-        Programme done on {data.adherence.days_with_exercise} days
+        {t("trend.adherenceLogged", {
+          withLog: data.adherence.days_with_any_log,
+          covered: data.adherence.days_covered,
+        })}{" "}
+        {t("trend.adherenceProgramme", { days: data.adherence.days_with_exercise })}
         {data.adherence.sessions_skipped > 0
-          ? `, logged as skipped on ${data.adherence.sessions_skipped} session${data.adherence.sessions_skipped === 1 ? "" : "s"}`
+          ? t("trend.skipped", { count: data.adherence.sessions_skipped })
           : ""}
-        . A trend is only a trend if the programme happened — that is why this line is here.
+        {t("trend.adherenceWhy")}
       </p>
 
       {data.severity_defaults > 0 ? (
-        <p className="mt-2 text-xs text-muted">
-          {data.severity_defaults} of these entries used the default severity rather than a
-          chosen number.
-        </p>
+        <p className="mt-2 text-xs text-muted">{t("trend.defaultsNote", { count: data.severity_defaults })}</p>
       ) : null}
 
       {data.plan_events.length > 0 ? (
@@ -95,7 +119,7 @@ export function SymptomTrendCard({ definitionId }: { definitionId: string }) {
           {data.plan_events.map((event) => (
             <li key={event.id} className="text-xs text-muted">
               <span className="font-bold tabular-nums text-ink">
-                {formatDay(event.occurred_at_utc)}
+                {fmt.day(event.occurred_at_utc)}
               </span>{" "}
               — {event.text}
             </li>
@@ -106,9 +130,7 @@ export function SymptomTrendCard({ definitionId }: { definitionId: string }) {
       {missing ? (
         <p className="mt-3 text-sm text-muted">{missing}</p>
       ) : data.sufficiency !== "enough" ? (
-        <p className="mt-3 text-sm text-muted">
-          Too few entries in this window for the comparison above to mean much.
-        </p>
+        <p className="mt-3 text-sm text-muted">{t("trend.tooFew")}</p>
       ) : null}
     </div>
   );

@@ -15,9 +15,9 @@ Threat model, in the order the data actually gets at risk:
   `sha256(token)` in `sessions.token_hash`. The cookie value is never persisted,
   so a stolen DB cannot be replayed.
 - Cookie flags: `HttpOnly` (no script can read it), `Secure` (HTTPS only, on by
-  default via `SYPHYSIO_COOKIE_SECURE=1`), `SameSite=Lax` (not sent on
+  default via `SYMPHYSIO_COOKIE_SECURE=1`), `SameSite=Lax` (not sent on
   cross-site POSTs, which kills most CSRF without a token dance), `Path=/`.
-- TTL `SYPHYSIO_SESSION_TTL_DAYS` (30 days). A session whose age passes half its
+- TTL `SYMPHYSIO_SESSION_TTL_DAYS` (30 days). A session whose age passes half its
   life is rolled forward — one new row, old row revoked — inside the same
   response that authenticated it. Rolling is capped per request; there is no
   refresh token to steal.
@@ -43,8 +43,8 @@ Double-submit, enforced by middleware before routing:
 
 `/api/v1/auth/*` only — the read endpoints are the user's own device.
 
-- Sliding window per client IP: `SYPHYSIO_RATE_LIMIT_ATTEMPTS` (10) per
-  `SYPHYSIO_RATE_LIMIT_WINDOW` (900 s) → then `SYPHYSIO_RATE_LIMIT_LOCKOUT`
+- Sliding window per client IP: `SYMPHYSIO_RATE_LIMIT_ATTEMPTS` (10) per
+  `SYMPHYSIO_RATE_LIMIT_WINDOW` (900 s) → then `SYMPHYSIO_RATE_LIMIT_LOCKOUT`
   (900 s) of `429` with `Retry-After`.
 - Login is additionally keyed by email, so a bot rotating IPs still cannot grind
   one account.
@@ -58,7 +58,7 @@ Double-submit, enforced by middleware before routing:
 - In-process and per-worker: run **one** uvicorn worker (see DEPLOYING.md). Put
   the limiter in Redis if you ever need more than one process.
 - The client key is the **socket peer**, unless that peer is one of
-  `SYPHYSIO_TRUSTED_PROXIES`; only then is `X-Forwarded-For` read, and only down
+  `SYMPHYSIO_TRUSTED_PROXIES`; only then is `X-Forwarded-For` read, and only down
   to the right-most entry that is not itself a proxy of ours. Behind Traefik that
   peer is the proxy container, so the list has to name its network — leave it
   empty and every visitor shares one budget.
@@ -71,7 +71,7 @@ Double-submit, enforced by middleware before routing:
 
 - Open by default — the first account has to come from somewhere, and a home
   server on a LAN has no strangers to keep out.
-- `SYPHYSIO_ALLOW_REGISTRATION=0` closes it: `POST /auth/register` answers `403`.
+- `SYMPHYSIO_ALLOW_REGISTRATION=0` closes it: `POST /auth/register` answers `403`.
   The refusal is charged to the IP limiter like any other rejected attempt, so
   scanning a closed door costs the same budget as hammering an open one. Any
   instance the internet can see should run closed once its own accounts exist —
@@ -87,9 +87,9 @@ The same shape as sessions, because the threat is the same: a long random value
 in flight, only its SHA-256 digest at rest.
 
 - 256-bit token (`secrets.token_urlsafe(32)`), stored as `sha256(token)` in
-  `email_verifications.token_hash`, TTL `SYPHYSIO_EMAIL_TTL_SECONDS` (24 h),
+  `email_verifications.token_hash`, TTL `SYMPHYSIO_EMAIL_TTL_SECONDS` (24 h),
   single use (`used_at_utc`).
-- The link is `{SYPHYSIO_PUBLIC_URL}/verify#token=…`, with the token in a URL
+- The link is `{SYMPHYSIO_PUBLIC_URL}/verify#token=…`, with the token in a URL
   **fragment**. A browser never sends the part after `#` to any server, so no
   access log — uvicorn's, Traefik's, a CDN's — can hold a live token. It used to
   be `?token=`, and it was logged: `GET /verify?token=…` appeared in uvicorn's
@@ -101,10 +101,10 @@ in flight, only its SHA-256 digest at rest.
 - Lookup is by digest, so a forged token matches no row: guessing is bounded by
   the IP counter on `/auth/*`, not by a per-account budget an attacker can probe
   to enumerate accounts.
-- The link host comes from `SYPHYSIO_PUBLIC_URL`, never from the request's
+- The link host comes from `SYMPHYSIO_PUBLIC_URL`, never from the request's
   `Host` header, so a poisoned header cannot mail an attacker-controlled domain
   to your users.
-- **Send budget:** `SYPHYSIO_EMAIL_SENDS_PER_HOUR` (3) per account, counted from
+- **Send budget:** `SYMPHYSIO_EMAIL_SENDS_PER_HOUR` (3) per account, counted from
   the database rather than memory, so it survives a restart and cannot be
   restarted into bypassing. Resending expires the previous row instead of
   deleting it, so old rows keep counting and no second live link escapes.
@@ -115,9 +115,9 @@ in flight, only its SHA-256 digest at rest.
 - Sends are background tasks after the response, so a slow or dead mail provider
   cannot hang or fail a sign-up. A failed send leaves the account usable in soft
   mode and the banner offers a resend.
-- **Admin can opt out entirely:** `SYPHYSIO_EMAIL_CONFIRMATION=off` mails nothing,
+- **Admin can opt out entirely:** `SYMPHYSIO_EMAIL_CONFIRMATION=off` mails nothing,
   shows no banner and gates nothing, even when a transport is configured.
-- **Refused configuration:** `SYPHYSIO_EMAIL_CONFIRMATION=required` without
+- **Refused configuration:** `SYMPHYSIO_EMAIL_CONFIRMATION=required` without
   email configured aborts startup rather than creating accounts nobody can
   unlock.
 
@@ -143,6 +143,13 @@ in flight, only its SHA-256 digest at rest.
   Registration *does* answer `409` for an existing email — an accepted trade-off
   for a self-hosted diary (no account harvesting at scale), noted here so nobody
   mistakes it for an oversight.
+- **Language is not an oracle.** Since 0.3.0 the server writes its error strings
+  in two languages, and the obvious implementation — look up the account, answer
+  in *its* locale — would leak that the account exists and what language it
+  chose. Failed login, the password-reset request and the reset confirmation all
+  answer in the language of the **request header** even when the address is
+  unknown, and only the mail those two endpoints queue uses the account's
+  stored locale.
 
 ## Injection
 
@@ -155,7 +162,7 @@ in flight, only its SHA-256 digest at rest.
   so a reviewer sees the reason rather than a bare f-string.
 - Ids are treated as opaque strings (≤ 36 chars); user-supplied `event_type` and
   `category` are regex-constrained by Pydantic before they reach SQL.
-- Request bodies are capped at `SYPHYSIO_MAX_BODY_BYTES` **before** parsing
+- Request bodies are capped at `SYMPHYSIO_MAX_BODY_BYTES` **before** parsing
   (`limit_body` middleware, checks `Content-Length`).
 - All request models are `strict=True, extra="forbid"`: no coercion surprises
   (`"1"` where an int was expected) and no smuggled fields reaching a row.
