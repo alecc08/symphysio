@@ -62,8 +62,13 @@ def test_summary_counts_and_streak(client: TestClient) -> None:
     assert body["totals"]["avg_symptom_severity"] == 6.0
     assert body["top_exercises"][0]["count"] == 4
     assert body["top_exercises"][0]["name"] == "Pelvic Floor Lifts"
-    assert len(body["daily"]) >= 4
-    assert body["daily"][-1]["exercises"] == 1
+    # Gap-filled: one point per day in the window, logged or not, so a chart
+    # cannot draw a line across a fortnight of silence.
+    assert len(body["daily"]) == 31
+    assert body["daily"][-1]["logged"] is False, "today: nothing logged yet"
+    assert body["daily"][-2]["exercises"] == 1
+    assert sum(1 for day in body["daily"] if day["logged"]) == 4
+    assert body["adherence"]["days_with_exercise"] == 4
     assert body["exercise_streak_days"] >= 3
 
 
@@ -121,31 +126,114 @@ def test_summary_is_scoped_to_the_window(client: TestClient) -> None:
     ] == 1
 
 
-def test_lag_correlations_find_the_pattern(client: TestClient) -> None:
+def test_the_lag_endpoint_is_gone(client: TestClient) -> None:
+    """It printed a count as a finding. Nothing may call it again by accident."""
     register(client)
-    _seed_lag_pattern(client)
-    body = client.get(
-        "/api/v1/analytics/lag-correlations",
-        params={"min_hr": 1, "max_hr": 6, "min_count": 3},
-    ).json()
-    assert body["pairs"], "expected one exercise->symptom pair"
-    pair = body["pairs"][0]
-    assert pair["exercise_name"] == "Pelvic Floor Lifts"
-    assert pair["post_exercise_occurrences"] == 4
-    assert pair["avg_lag_hours"] == 2.5
-    assert pair["min_lag_hours"] == 2.5 and pair["max_lag_hours"] == 2.5
-    assert pair["avg_severity"] == 6.0
-    assert pair["share_of_symptom_logs"] == 1.0
+    assert client.get("/api/v1/analytics/lag-correlations").status_code == 404
 
 
-def test_lag_correlations_respect_the_window(client: TestClient) -> None:
+def test_associations_answer_the_question_in_words(client: TestClient) -> None:
+    """4 sessions, 4 follow-ons: not enough to say anything, and it says so.
+
+    `MIN_SESSIONS`/`MIN_HITS` gate a pair at 5 sessions and 3 hits, so this
+    diary — the size of a first week — must come back with no findings and the
+    sufficiency state, not with a confident bar.
+    """
     register(client)
     _seed_lag_pattern(client)
-    body = client.get(
-        "/api/v1/analytics/lag-correlations",
-        params={"min_hr": 6, "max_hr": 24, "min_count": 1},
-    ).json()
-    assert body["pairs"] == []
+    body = client.get("/api/v1/analytics/associations", params={"days": 30}).json()
+    assert body["findings"] == []
+    assert body["sufficiency"] in {"thin", "none"}
+    # Not even examined: 4 logs is below the 5-log candidate bar, which is the
+    # multiplicity control (docs/INSIGHTS_PLAN.md §2.3), not a courtesy.
+    assert body["pairs_examined"] == 0
+    assert body["windows"], "the profile supplies the windows"
+
+
+def test_a_real_pattern_reaches_the_client_through_the_endpoint(client: TestClient) -> None:
+    """The end-to-end proof: enough diary, one real lag, and it is named.
+
+    10 sessions every other day; heaviness follows on 7 of them, 3 h later; 10
+    background heaviness logs in the evenings, on days with no session, so the
+    matched baseline has something honest to compare against.
+    """
+    register(client)
+    exercise = catalog_ids(client, "exercises")[0]
+    symptom = catalog_ids(client, "symptoms")[0]
+    for day in range(1, 21):
+        at = NOW - day * DAY + 9 * 3600
+        if day % 2:
+            client.post(
+                "/api/v1/logs/exercises",
+                json={
+                    "exercise_id": exercise["id"],
+                    "occurred_at_utc": at,
+                    "effort_rpe": 5,
+                    "tz_offset_min": 0,
+                },
+                headers=_h(client),
+            )
+            if day <= 14:
+                client.post(
+                    "/api/v1/logs/symptoms",
+                    json={
+                        "symptom_id": symptom["id"],
+                        "severity": 7,
+                        "occurred_at_utc": at + 3 * 3600,
+                        "tz_offset_min": 0,
+                    },
+                    headers=_h(client),
+                )
+        else:
+            client.post(
+                "/api/v1/logs/symptoms",
+                json={
+                    "symptom_id": symptom["id"],
+                    "severity": 4,
+                    "occurred_at_utc": at + 11 * 3600,
+                    "tz_offset_min": 0,
+                },
+                headers=_h(client),
+            )
+    body = client.get("/api/v1/analytics/associations", params={"days": 30}).json()
+    assert body["sufficiency"] == "enough", body["coverage"]
+    assert body["pairs_examined"] == 1
+    assert len(body["findings"]) == 1
+    finding = body["findings"][0]
+    assert finding["exposure_name"] == "Pelvic Floor Lifts"
+    assert finding["symptom_name"] == "Heaviness / Dragging"
+    assert finding["sessions"] == 10 and finding["hits"] == 7
+    assert finding["control_windows"] > 0
+    assert finding["verdict"] == "worth a look"
+    # Printed as counts and one fixed word — no interval, no p-value, no advice.
+    # The background logs are all in the evening, so no control window (10:00-15:00
+    # on a session-free day) catches one: the baseline rate is exactly zero, and a
+    # ratio against zero is not printed at all. The card says "7 of 10, against 0
+    # of N comparable days", which is the honest version.
+    assert finding["control_hits"] == 0
+    assert finding["relative_risk"] is None
+    assert finding["control_windows"] > 5
+
+
+def test_associations_offer_only_the_profiles_windows(client: TestClient) -> None:
+    register(client)
+    body = client.get("/api/v1/analytics/associations", params={"days": 30}).json()
+    labels = [item["label"] for item in body["windows"]]
+    assert body["window"]["label"] in labels
+    invented = client.get(
+        "/api/v1/analytics/associations", params={"days": 30, "window": "2-7 h"}
+    )
+    assert invented.status_code == 422, "free-form windows are how you fish for a pattern"
+    assert "0-2 h" in labels and "6-48 h" in labels
+
+
+def test_associations_start_empty_gets_no_windows_and_no_nothing(client: TestClient) -> None:
+    register(client)
+    # `none` still has windows (there is no profile to inherit), and with no logs
+    # the honest answer is the empty one.
+    body = client.get("/api/v1/analytics/associations", params={"days": 30}).json()
+    assert body["findings"] == [] and body["pairs_examined"] == 0
+    assert body["coverage"]["state"] == "none"
 
 
 def test_time_of_day_buckets_by_local_hour(client: TestClient) -> None:
