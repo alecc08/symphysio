@@ -74,11 +74,11 @@ Email is optional. The server only offers it when `RESEND_API_KEY`,
 configured every account is born `is_verified: true` and nothing changes.
 
 - `POST /auth/register` queues a confirmation link in the response's background
-  task. The link is `{SYPHYSIO_PUBLIC_URL}/verify?token=…`; the SPA at `/verify`
-  lifts the token out of the address bar and posts it as JSON to `/auth/verify`,
-  so the **API** never has a token in a URL. The page navigation itself does
-  carry it, which is why the image starts uvicorn with `--no-access-log` and why
-  your proxy should mask the `token` parameter (DEPLOYING.md).
+  task. The link is `{SYPHYSIO_PUBLIC_URL}/verify#token=…` — a URL **fragment**,
+  which a browser never sends to a server, so no access log on the way can record
+  a live token. The SPA at `/verify` lifts the token out of the address bar and
+  posts it as JSON to `/auth/verify`, so the **API** never has a token in a URL
+  either. An older mail that still says `?token=` keeps working.
 - `/auth/verify` returns `204` on success. Anything else is a fresh start for the
   user: `400 {"detail": "That confirmation link is not valid."}`,
   `410 "…has expired. Request a new one."`, `410 "…has already been used."`.

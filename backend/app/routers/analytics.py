@@ -124,6 +124,16 @@ async def _top(db: Database, user_id: str, since: int, kind: str, limit: int) ->
     return await db.rows(sql, (user_id, since, limit))
 
 
+async def _latest_offset(db: Database, user_id: str) -> int:
+    """The offset the user's most recent entry used: their frame of reference."""
+    row = await db.row(
+        "SELECT tz_offset_min FROM exercise_logs WHERE user_id = ?"
+        " ORDER BY occurred_at_utc DESC LIMIT 1",
+        (user_id,),
+    )
+    return int(row["tz_offset_min"]) if row else 0
+
+
 async def _streak(db: Database, user_id: str, since: int) -> int:
     rows = await db.rows(
         """
@@ -136,7 +146,12 @@ async def _streak(db: Database, user_id: str, since: int) -> int:
     if not days:
         return 0
     latest = max(days)
-    if now_utc() // DAY_SECONDS - latest > 1:
+    # "Today" has to be today *in the frame the buckets were cut in*. Comparing a
+    # local day index against a UTC one reports a broken streak for anyone west of
+    # UTC during the hours when the two calendars disagree: measured for UTC-5 at
+    # 19:50 EST (= 00:50 UTC the next day), where four evenings in a row answered 0.
+    offset = await _latest_offset(db, user_id)
+    if (now_utc() + offset * 60) // DAY_SECONDS - latest > 1:
         return 0  # streak broke: nothing logged today or yesterday
     streak = 0
     while latest - streak in days:

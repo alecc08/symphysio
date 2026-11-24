@@ -13,6 +13,46 @@ numbers mean here.
 Nothing beyond the current release. The next items are designed first, in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## [0.1.2] - 2026-11-23
+
+Two holes found by attacking the published image rather than reading the code, and
+a streak that disagreed with itself around midnight.
+
+### Fixed
+
+- **The login limiter believed a header the caller controls.** `X-Forwarded-For`
+  was used whenever it was present, so every guess could arrive with a new address.
+  Measured against `ghcr.io/alecc08/symphysio:0.1.1` with
+  `SYPHYSIO_RATE_LIMIT_ATTEMPTS=1`: one failed login, then a second carrying
+  `X-Forwarded-For: 9.9.9.9`, answered `401` — not `429`. One header per request
+  and the per-IP budget never ran out, on any instance whose port can be reached
+  without going through the proxy. The client address is now the **socket peer**,
+  and the header is consulted only when that peer is one of the new
+  `SYPHYSIO_TRUSTED_PROXIES` CIDRs, and only down to the right-most hop that is not
+  itself a listed proxy. Behind Traefik that peer is the proxy container, so the
+  list has to name its network — [docs/DEPLOYING.md](docs/DEPLOYING.md) item 2.
+  Empty, the default, means "no proxy": right for `uv run uvicorn` on a laptop, and
+  one shared budget behind a proxy, which is why deploying behind one is now a
+  configuration step rather than an assumption.
+- **Confirmation tokens were written into access logs.** The emailed link opened as
+  `GET /verify?token=…`, so whoever terminates TLS logged a live token. It is now
+  `/verify#token=…`: a fragment is never sent to a server, so there is nothing left
+  to mask at Traefik, Caddy or nginx. The SPA still understands a `?token=` link,
+  so mail sent by 0.1.0 and 0.1.1 keeps working.
+- **An exercise streak read 0 for anyone west of UTC.** Day buckets are cut in the
+  user's frame (`occurred_at_utc + tz_offset_min * 60`), but "logged today or
+  yesterday?" was asked against UTC. For UTC-5 those calendars disagree for five
+  hours a day — the evening, which is when people log — and four evenings in a row
+  answered 0. The test suite passed in the morning and failed in the evening, which
+  is how this shipped.
+
+### Notes
+
+- Deploying behind a proxy is now an explicit line in `.env.example`,
+  `docker-compose.yml` and the DEPLOYING checklist. A `SYPHYSIO_TRUSTED_PROXIES`
+  value that is not a valid IP or CIDR stops the container at startup instead of
+  quietly dropping the entry.
+
 ## [0.1.1] - 2026-11-23
 
 Release tooling only — no application code changed, and the container is the same
@@ -113,6 +153,7 @@ symptoms, in one container with one SQLite file and no third-party services.
 - Dependabot for npm, pip, Docker and Actions, with `uv.lock` verified on every
   PR.
 
-[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/alecc08/symphysio/releases/tag/v0.1.2
 [0.1.1]: https://github.com/alecc08/symphysio/releases/tag/v0.1.1
 [0.1.0]: https://github.com/alecc08/symphysio/releases/tag/v0.1.0

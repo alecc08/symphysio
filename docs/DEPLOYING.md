@@ -60,21 +60,25 @@ whole internet means four more decisions, all cheap:
    account has to come from somewhere) and a public host gets scanned within
    hours. `POST /auth/register` then answers `403` — after the IP limiter, so
    probing it is not free for the prober.
-2. **Mask the confirmation token in your proxy's access log.** The browser opens
-   `https://<host>/verify?token=…`, so the token appears in whoever terminates
-   TLS. Traefik:
+2. **Tell it where your proxy is**, or the login limiter is theatre in one of two
+   directions. With `SYPHYSIO_TRUSTED_PROXIES` empty, the client address is the
+   socket peer — behind Traefik that is the proxy container, so one visitor's typo
+   locks out every other visitor. Make it too wide and a caller can forge
+   `X-Forwarded-For` and buy an unlimited number of guesses (that was the behaviour
+   until the rule existed, and it was measured, not theorised). Name the network
+   your proxy actually connects from — for Docker, its own network's CIDR:
 
-   ```yaml
-   --accessLog.maskedParameters=token
+   ```bash
+   SYPHYSIO_TRUSTED_PROXIES=172.17.0.0/16     # traefik's docker network, not the LAN
    ```
 
-   nginx logs the request line as-is, so use `location = /verify { access_log off; }`
-   or post-process. The container itself runs uvicorn with `--no-access-log` for
-   exactly this reason, which is why the proxy is the only place left to fix.
+   Nothing needs masking in the proxy's access log: the confirmation link carries
+   its token in a URL fragment, which a browser never sends to a server. The
+   container also runs uvicorn with `--no-access-log`.
 3. **HSTS at the proxy** (`max-age=31536000; includeSubDomains`). The app sends
    CSP with `upgrade-insecure-requests` but not HSTS, because getting this value
    wrong is a lockout and it belongs with the certificate.
-4. **Pin the image tag** — `ghcr.io/alecc08/symphysio:0.1.1`, not `:latest`.
+4. **Pin the image tag** — `ghcr.io/alecc08/symphysio:0.1.2`, not `:latest`.
    Migrations are forward-only, so `:latest` moving under you means a rollback
    needs a restore, not a pull (see [RELEASES.md](RELEASES.md)).
 
@@ -119,6 +123,7 @@ is baked into the image. See `.env.example`.
 | `SYPHYSIO_COOKIE_SECURE` | `1` | `Secure` on both cookies; set `0` only for plain-HTTP dev on a non-localhost origin |
 | `SYPHYSIO_SESSION_TTL_DAYS` | `30` | session lifetime (rolled forward at half-life) |
 | `SYPHYSIO_MAX_BODY_BYTES` | `262144` | request body cap, enforced before parsing |
+| `SYPHYSIO_TRUSTED_PROXIES` | *(empty)* | space or comma separated CIDRs of *your* proxy. Empty means the socket peer is the client address (one shared budget behind a proxy); only then is `X-Forwarded-For` read |
 | `SYPHYSIO_ALLOW_REGISTRATION` | `1` | `0` closes sign-up — `POST /auth/register` answers `403`. Set it to `0` on anything the internet can see, once your own accounts exist |
 | `SYPHYSIO_RATE_LIMIT` | `1` | `0` disables auth rate limiting (dev only) |
 | `SYPHYSIO_RATE_LIMIT_ATTEMPTS` | `10` | attempts per window, per IP and per email |

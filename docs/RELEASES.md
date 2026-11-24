@@ -52,7 +52,7 @@ possible at all.
 The package is public: a deploy host needs no registry credentials.
 
 ```bash
-docker pull ghcr.io/alecc08/symphysio:0.1.1
+docker pull ghcr.io/alecc08/symphysio:0.1.2
 ```
 
 ## Rules

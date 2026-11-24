@@ -56,12 +56,13 @@ link clicked ──► POST /api/v1/auth/verify {token}
               └─► token_hash lookup, not expired, not used
               └─► users.is_verified = 1, verified_at_utc = now
               └─► verification row consumed (used_at_utc set, token cleared)
-              └─► 204; the SPA strips ?token= from the URL with history.replaceState
+              └─► 204; the SPA clears the token from the URL with history.replaceState
 ```
 
-The link is `https://<host>/verify?token=…`, handled by the SPA (a tiny
+The link is `https://<host>/verify#token=…`, handled by the SPA (a tiny
 `VerifyPage`) rather than a server-rendered page — one less templating surface,
-and the app already has to render this state anyway.
+and the app already has to render this state anyway. The token sits in a URL
+**fragment** because a browser never sends the part after `#` to a server.
 
 ### Schema (`migrations/002_email_verification.sql`)
 
@@ -151,11 +152,11 @@ recorded in DEPLOYING.md when this lands.
   args; it is only read at runtime from the environment.
 - Verification tokens are logged as nothing at all (not even a prefix); emails are
   logged masked (`p…e@example.com`) at `INFO`, full address only at `DEBUG`.
-- The token appears in a URL the user clicks, which means it can appear in a
-  proxy access log. Mitigations: single use, 24 h TTL, `Referrer-Policy:
-  no-referrer` (already set), the SPA removing it from history immediately, and
-  the image starting uvicorn with `--no-access-log` so the request line is not
-  recorded by the app itself either.
+- The token appears in a URL the user clicks, so it is in the fragment
+  (`/verify#token=…`), which the browser never sends to a server: no proxy or CDN
+  access log can record it. Mitigations that were already there: single use, 24 h
+  TTL, `Referrer-Policy: no-referrer`, the SPA removing it from history
+  immediately, and the image starting uvicorn with `--no-access-log`.
 
 ### Tests
 
@@ -164,7 +165,7 @@ recorded in DEPLOYING.md when this lands.
 - Integration: register → outbox has exactly one message → `POST /auth/verify`
   returns 204 and `is_verified = 1`; second use returns `410`.
 - Playwright: register, pull the link out of the test outbox endpoint, click it,
-  assert the banner disappears and the URL no longer carries `?token=`.
+  assert the banner disappears and the URL no longer carries the token.
 - No test ever calls Resend. `ResendMailer` is covered by a stubbed transport.
 
 ### Also unlocked by the same plumbing
