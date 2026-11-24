@@ -26,6 +26,27 @@ Tooling only — no application code, so no image change and no version bump.
   against 0.1.2 it is clean in both modes; the same script against 0.1.1 answers
   `[401, 401, 401]` where a lockout should be.
 
+## [0.1.3] - 2026-11-24
+
+### Fixed
+
+- **The severity scale was off the top of the screen on a phone.** The quick-log
+  drawer is anchored to the bottom of the viewport and was sized to its own content,
+  so a drawer taller than the screen grew upward past the top edge — and nothing
+  scrolled, because `body` is pinned while the drawer is open. Symptoms is the
+  tallest drawer (score scale, duration chips, time chips, then the preset grid),
+  and the scale it asks for first was the first thing lost. Measured in Chromium at
+  390x664 CSS px — a 390x844 phone once browser chrome is taken off — the panel was
+  986 px tall with 322 px above the fold and **none of the ten severity buttons on
+  screen**; the drawer showed only the time strip and the presets. At 360x640 even
+  the time strip was gone. Any drawer did the same once the account had enough
+  presets. The panel is now capped at `88dvh` and its body scrolls, with the title
+  and subtitle pinned above it. Re-measured at 360x640, 390x664, 390x844 and
+  430x932: the panel is fully on screen in all four, all ten severity buttons are
+  visible without scrolling, and the preset list is what scrolls. The History
+  edit-entry drawer, which shares `Sheet.tsx`, already fit at those sizes and is
+  unchanged.
+
 ## [0.1.2] - 2026-11-23
 
 Two holes found by attacking the published image rather than reading the code, and
@@ -166,7 +187,8 @@ symptoms, in one container with one SQLite file and no third-party services.
 - Dependabot for npm, pip, Docker and Actions, with `uv.lock` verified on every
   PR.
 
-[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/alecc08/symphysio/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/alecc08/symphysio/releases/tag/v0.1.3
 [0.1.2]: https://github.com/alecc08/symphysio/releases/tag/v0.1.2
 [0.1.1]: https://github.com/alecc08/symphysio/releases/tag/v0.1.1
 [0.1.0]: https://github.com/alecc08/symphysio/releases/tag/v0.1.0

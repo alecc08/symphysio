@@ -192,6 +192,11 @@ and charts built from divs rather than a charting dependency.
   keyboard, invisible to touch.
 - The drawer traps Escape (closes), and the backdrop is a button with an
   `aria-label`.
+- The drawer panel is capped at `88dvh` and its body scrolls; the title and
+  subtitle stay put. A panel sized to its content is anchored to the bottom of the
+  screen, so a full drawer grew off the top with nothing to scroll and hid the one
+  control a symptom log requires — see the `0.1.3` entry in
+  [CHANGELOG.md](../CHANGELOG.md). Re-measure at 360x640 if you change `Sheet.tsx`.
 - Severity is ten large buttons (1–10; the optional pain-during scale runs 0–10),
   not a slider: a slider is hard to set precisely one-handed and exposes no value
   to a screen reader.
