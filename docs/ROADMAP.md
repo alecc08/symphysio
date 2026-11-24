@@ -5,6 +5,12 @@ the schema and the failure modes, not the API call, and the sketch is where they
 are written down. Current behaviour of built items lives in `API.md`,
 `DATABASE.md`, `SECURITY.md` and `DEPLOYING.md`.
 
+The plan for what comes next — insights a user can actually trust, and the
+preset profiles offered at sign-up — is
+[INSIGHTS_PLAN.md](INSIGHTS_PLAN.md). It starts with a measurement showing that
+the lag panel shipped in 0.1.x reports noise, so read §1.1 of it before touching
+`analytics.py`.
+
 ---
 
 ## 1. Email confirmation via Resend — built
