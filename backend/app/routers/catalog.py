@@ -69,8 +69,22 @@ KINDS: dict[str, dict[str, Any]] = {
     },
     "symptoms": {
         "table": "symptom_definitions",
+        # `last_severity` / `last_logged_utc` are the number this person last chose
+        # for this symptom and when, so the drawer can offer that number back with
+        # its name attached instead of silently logging another default 5. Scalar
+        # subqueries on purpose: the (user_id, symptom_id, occurred_at_utc DESC)
+        # index from 001 makes each one a single seek, at diary-sized catalogs.
         "select_cols": (
-            "id, name, default_region AS body_region, icon_key, is_archived, sort_order"
+            "id, name, default_region AS body_region, icon_key, is_archived, sort_order,"
+            " profile_key,"
+            " (SELECT severity FROM symptom_logs sl"
+            "  WHERE sl.user_id = symptom_definitions.user_id"
+            "   AND sl.symptom_id = symptom_definitions.id"
+            "  ORDER BY sl.occurred_at_utc DESC LIMIT 1) AS last_severity,"
+            " (SELECT occurred_at_utc FROM symptom_logs sl"
+            "  WHERE sl.user_id = symptom_definitions.user_id"
+            "   AND sl.symptom_id = symptom_definitions.id"
+            "  ORDER BY sl.occurred_at_utc DESC LIMIT 1) AS last_logged_utc"
         ),
         "create_cols": ("name", "default_region", "icon_key", "sort_order"),
         "update_cols": ("name", "default_region", "icon_key", "is_archived", "sort_order"),
@@ -79,7 +93,7 @@ KINDS: dict[str, dict[str, Any]] = {
     },
     "contexts": {
         "table": "context_definitions",
-        "select_cols": "id, name, category, icon_key, is_archived, sort_order",
+        "select_cols": "id, name, category, icon_key, is_archived, sort_order, profile_key",
         "create_cols": ("category", "name", "icon_key", "sort_order"),
         "update_cols": ("name", "icon_key", "is_archived", "sort_order"),
         "create_model": ContextDefinitionCreate,
@@ -215,7 +229,7 @@ async def list_profiles() -> list[ProfileOut]:
             counts=profile.counts,
             windows=[
                 WindowOut(label=label, min_hours=low, max_hours=high)
-                for label, low, high in profile.windows
+                for label, low, high in sorted(profile.windows, key=lambda row: (row[1], row[2]))
             ],
             default_window=profile.default_window,
         )

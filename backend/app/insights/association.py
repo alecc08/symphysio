@@ -19,6 +19,7 @@ Then the Wilson interval, which is what survives small N honestly.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from statistics import NormalDist
@@ -50,6 +51,14 @@ CONTROL_OFFSETS = (-3, -2, -1, 1, 2, 3)  # same hour-of-day, ±days, never the s
 MAX_FINDINGS = 8
 FAMILY_ALPHA = 0.05  # one 5% false positive across the *whole* card, not per pair
 MAX_Z = 4.5          # stops the correction demanding impossible data
+# The correction stops at 99% per pair. Purist Bonferroni over 24 pairs asks for
+# z≈3.1, and at diary-sized n (7 of 8 against 0 of 17) that bound no longer
+# separates anything: the card would be unfalsifiable, always saying "nothing
+# stands out". The floor is a judgement call, and the check on it is empirical,
+# not theoretical: tests/test_insights_null.py asserts zero findings on seeded
+# independent diaries at three densities, and scripts/probes/lag_null.py prints
+# the same comparison over wider. Change the floor and one of those goes red.
+MIN_PER_PAIR_ALPHA = 0.01
 
 
 def adjusted_z(pairs_examined: int, alpha: float = FAMILY_ALPHA) -> float:
@@ -64,7 +73,7 @@ def adjusted_z(pairs_examined: int, alpha: float = FAMILY_ALPHA) -> float:
     """
     if pairs_examined <= 1:
         return Z_95
-    per_pair = alpha / pairs_examined
+    per_pair = max(MIN_PER_PAIR_ALPHA, alpha / pairs_examined)
     return min(MAX_Z, NormalDist().inv_cdf(1.0 - per_pair / 2.0))
 
 
@@ -168,6 +177,10 @@ class Analysis:
     eligible_symptoms: int
     skipped_sessions: int  # logged as "did not do it"; never an exposure
     days_covered: int
+    # Why pairs were refused, as counts. "no_comparable_windows: 6" is a truer and
+    # more useful answer than "not enough data": for someone who trains every day
+    # there is no comparable day, and saying so is the result.
+    gates: list[dict[str, object]]
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -183,6 +196,7 @@ class Analysis:
             "eligible_symptoms": self.eligible_symptoms,
             "skipped_sessions": self.skipped_sessions,
             "days_covered": self.days_covered,
+            "gates": list(self.gates),
         }
 
 
@@ -362,25 +376,28 @@ def analyse(
 
     z = adjusted_z(len(candidates) * len(eligible_symptoms))
     findings: list[Finding] = []
+    gate_counts: Counter[str] = Counter()
     for (kind, exposure_id), sessions in candidates.items():
         for symptom_id, logs in eligible_symptoms.items():
             symptom_times = sorted(log.local_seconds for log in logs)
-            findings.append(
-                _pair(
-                    exposure_kind=kind,
-                    exposure_id=exposure_id,
-                    exposure_name=sessions[0].name,
-                    symptom_id=symptom_id,
-                    symptom_name=logs[0].name,
-                    sessions=sessions,
-                    symptom_times=symptom_times,
-                    symptom_logs=logs,
-                    window=window,
-                    range_start=range_start,
-                    range_end=range_end,
-                    z=z,
-                )
+            pair = _pair(
+                exposure_kind=kind,
+                exposure_id=exposure_id,
+                exposure_name=sessions[0].name,
+                symptom_id=symptom_id,
+                symptom_name=logs[0].name,
+                sessions=sessions,
+                symptom_times=symptom_times,
+                symptom_logs=logs,
+                window=window,
+                range_start=range_start,
+                range_end=range_end,
+                z=z,
             )
+            if pair.gate:
+                gate_counts[pair.gate] += 1
+            else:
+                findings.append(pair)
 
     # Ranked by the conservative margin, not the point estimate: a chance pair at
     # a dense logging rate has a lower bound sitting near its baseline, so it
@@ -396,4 +413,8 @@ def analyse(
         eligible_symptoms=len(eligible_symptoms),
         skipped_sessions=sum(1 for event in events if event.is_skipped_session),
         days_covered=len({event.local_seconds // DAY_SECONDS for event in events}),
+        gates=[
+            {"gate": name, "pairs": count}
+            for name, count in sorted(gate_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
     )

@@ -43,9 +43,10 @@ def _day_label(day_index: int) -> str:
 
 def _profile_windows(profile_key: str) -> list[Window]:
     profile = PROFILES.get(profile_key) or PROFILES["none"]
-    return [
-        Window(label=label, min_hours=low, max_hours=high) for label, low, high in profile.windows
-    ]
+    # Smallest window first, however the registry happens to list them: the picker
+    # reads as a scale (0-2 h, 1-6 h, 6-48 h) instead of a shuffled set.
+    rows = sorted(profile.windows, key=lambda row: (row[1], row[2]))
+    return [Window(label=label, min_hours=low, max_hours=high) for label, low, high in rows]
 
 
 def _choose_window(windows: list[Window], wanted: str | None, default: str) -> Window:
@@ -274,6 +275,8 @@ async def associations(
         "pairs_shown": len(shown),
         "skipped_sessions": analysis.skipped_sessions,
         "days_covered": analysis.days_covered,
+        # Why refused pairs were refused, so the card can say the real reason.
+        "gates": analysis.gates,
         "findings": [item.as_dict() for item in shown],
     }
 
@@ -351,8 +354,14 @@ async def symptom_trend(
     points = series(
         scoped, range_start=since, range_end=now_utc(), reference_offset_min=offset
     )
-    head = [point for point in points[:baseline_days] if point.symptoms]
-    tail = [point for point in points[baseline_days:] if point.symptoms]
+    # The comparison is with the symptom's own start, not with the start of the
+    # requested window: a 90-day window over a three-week diary would put the whole
+    # "baseline" in the fortnight before the person had the app.
+    logged = [point for point in points if point.symptoms]
+    first = next((i for i, point in enumerate(points) if point.logged), 0)
+    span = points[first:]
+    head = [point for point in span[:baseline_days] if point.symptoms]
+    tail = [point for point in span[baseline_days:] if point.symptoms]
 
     def _mean(rows: list[Any], key: str) -> float | None:
         values = [getattr(row, key) for row in rows if getattr(row, key) is not None]
@@ -363,13 +372,13 @@ async def symptom_trend(
         " WHERE user_id = ? AND occurred_at_utc >= ? ORDER BY occurred_at_utc",
         (user["id"], since),
     )
-    logged = [point for point in points if point.symptoms]
     gate = coverage(
         symptom_logs=sum(point.symptoms for point in points),
         exercise_logs=sum(point.exercises for point in points),
         days_covered=len(logged),
         days_requested=days,
         eligible_pairs=0,
+        pairs_required=False,
     )
     return {
         "definition": {

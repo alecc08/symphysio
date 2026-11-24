@@ -156,3 +156,5 @@ def test_a_daily_exposure_says_why_it_cannot_tell() -> None:
     )
     assert analysis.findings == []
     assert analysis.pairs_examined == 1
+    # ...and the refusal is explained, not hidden: the reason is the finding here.
+    assert analysis.gates == [{"gate": "no_comparable_windows", "pairs": 1}]

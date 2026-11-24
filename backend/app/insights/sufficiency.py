@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 MIN_DAYS_FOR_ANY_CARD = 7  # under a week of entries: describe, do not analyse
-MIN_LOGS_FOR_ASSOCIATION = 15  # symptom logs before a lag question is meaningful
+MIN_LOGS_FOR_A_CLAIM = 15  # entries before any card may compare two things
 MIN_PAIRS_FOR_ASSOCIATION = 1  # needs >=5 logs on both sides of at least one pair
 
 
@@ -51,15 +51,21 @@ def coverage(
     days_requested: int,
     eligible_pairs: int,
     context_logs: int = 0,
+    pairs_required: bool = True,
 ) -> Coverage:
-    """One verdict for every card, from the counts the card actually has."""
+    """One verdict for every card, from the counts the card actually has.
+
+    `pairs_required` is False for the cards that never compare two definitions —
+    a symptom against its own earlier weeks needs entries, not definition pairs,
+    and leaving the pair rule on would make that card say "not enough" forever.
+    """
     total = symptom_logs + exercise_logs + context_logs
     if total == 0 or days_covered < 2:
         state = "none"
     elif (
         days_covered < MIN_DAYS_FOR_ANY_CARD
-        or symptom_logs < MIN_LOGS_FOR_ASSOCIATION
-        or eligible_pairs < MIN_PAIRS_FOR_ASSOCIATION
+        or symptom_logs < MIN_LOGS_FOR_A_CLAIM
+        or (pairs_required and eligible_pairs < MIN_PAIRS_FOR_ASSOCIATION)
     ):
         state = "thin"
     else:

@@ -213,6 +213,39 @@ def test_a_real_pattern_reaches_the_client_through_the_endpoint(client: TestClie
     assert finding["control_hits"] == 0
     assert finding["relative_risk"] is None
     assert finding["control_windows"] > 5
+    assert finding["gate"] == "" and body["gates"] == [], "this pair reached a verdict"
+
+
+def test_a_daily_exposure_is_explained_not_dropped(client: TestClient) -> None:
+    """Training every day leaves no comparable day, and the card must say so.
+
+    A silent empty list reads as "no pattern"; the true answer is "there is
+    nothing to compare against", which is why `gates` travels with the response.
+    """
+    register(client)
+    exercise = catalog_ids(client, "exercises")[0]
+    symptom = catalog_ids(client, "symptoms")[0]
+    for day in range(1, 40):
+        at = NOW - day * DAY + 9 * 3600
+        client.post(
+            "/api/v1/logs/exercises",
+            json={"exercise_id": exercise["id"], "occurred_at_utc": at, "tz_offset_min": 0},
+            headers=_h(client),
+        )
+        client.post(
+            "/api/v1/logs/symptoms",
+            json={
+                "symptom_id": symptom["id"],
+                "severity": 6,
+                "occurred_at_utc": at + 3 * 3600,
+                "tz_offset_min": 0,
+            },
+            headers=_h(client),
+        )
+    body = client.get("/api/v1/analytics/associations", params={"days": 90}).json()
+    assert body["findings"] == []
+    assert body["pairs_examined"] == 1
+    assert {"gate": "no_comparable_windows", "pairs": 1} in body["gates"], body["gates"]
 
 
 def test_associations_offer_only_the_profiles_windows(client: TestClient) -> None:

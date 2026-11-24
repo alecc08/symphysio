@@ -68,6 +68,48 @@ def test_the_picker_is_public_and_covers_every_profile(client: TestClient) -> No
         assert item["default_window"] in [window["label"] for window in item["windows"]]
 
 
+def test_profile_labels_fit_a_phone_and_windows_sort_smallest_first(client: TestClient) -> None:
+    """The picker is a <select> about 20 characters wide.
+
+    A label that truncates is worse than a short one, and a window list in the
+    order the registry happens to hold it (0-24 h, 24-72 h, 0-2 h) does not read
+    as a scale, so both are asserted here rather than left to a screenshot.
+    """
+    body = client.get("/api/v1/catalog/profiles").json()
+    for item in body:
+        assert len(item["label"]) <= 22, item["label"]
+        bounds = [(window["min_hours"], window["max_hours"]) for window in item["windows"]]
+        assert bounds == sorted(bounds), item["key"]
+
+
+def test_the_catalog_remembers_the_last_severity(client: TestClient) -> None:
+    """The drawer offers back the number actually chosen, instead of another 5.
+
+    Only the definition that was logged gets one — a symptom you have never
+    logged has no "last time" to remember.
+    """
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": EMAIL, "password": PASSWORD, "profile": "none"},
+    )
+    created = client.post(
+        "/api/v1/catalog/symptoms", json={"name": "Heaviness"}, headers=csrf_headers(client)
+    )
+    client.post(
+        "/api/v1/catalog/symptoms", json={"name": "Ache"}, headers=csrf_headers(client)
+    )
+    logged = client.post(
+        "/api/v1/logs/symptoms",
+        json={"symptom_id": created.json()["id"], "severity": 7, "severity_default": False},
+        headers=csrf_headers(client),
+    )
+    assert logged.status_code == 201
+    rows = {row["name"]: row for row in client.get("/api/v1/catalog/symptoms").json()}
+    assert rows["Heaviness"]["last_severity"] == 7
+    assert rows["Heaviness"]["last_logged_utc"] is not None
+    assert rows["Ache"]["last_severity"] is None, "no log, no memory"
+
+
 def test_seeded_definitions_record_their_origin(client: TestClient) -> None:
     """`profile_key` answers "why is there a Clamshell in this diary" and nothing
     else — no behaviour may key off it."""

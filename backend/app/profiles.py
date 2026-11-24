@@ -42,6 +42,10 @@ DEFAULT_WINDOWS: tuple[WindowRow, ...] = (
 @dataclass(frozen=True)
 class Profile:
     key: str
+    # `label` renders inside a <select> on a 360 px phone, where roughly 20
+    # characters fit before the arrow: short enough to read at a glance, with the
+    # detail in `blurb`. "Low back, SI and pelvic girdle pain" truncates to
+    # "Low back, SI and pelvic gird", which is worse than the short version.
     label: str
     blurb: str
     exercises: tuple[ExerciseRow, ...] = ()
@@ -62,7 +66,7 @@ class Profile:
 
 POSTNATAL_PELVIC = Profile(
     key="postnatal_pelvic",
-    label="Pelvic health after childbirth",
+    label="After childbirth",
     blurb=(
         "Heaviness, leakage, scar and girdle pain, and the physio that rebuilds "
         "the pelvic floor. What this app was written for."
@@ -116,7 +120,7 @@ POSTNATAL_PELVIC = Profile(
 # the coffee" is a different signal from "sore the next day".
 BLADDER_BOWEL = Profile(
     key="bladder_bowel",
-    label="Leakage, urgency and bowel control",
+    label="Bladder & bowel",
     blurb=(
         "Bladder and bowel symptoms without a recent birth - after menopause, "
         "running, prostate surgery, or urgency that just arrived."
@@ -173,7 +177,7 @@ BLADDER_BOWEL = Profile(
 
 LOW_BACK_GIRDLE = Profile(
     key="low_back_girdle",
-    label="Low back, SI and pelvic girdle pain",
+    label="Low back & girdle",
     blurb=(
         "Back and pelvic-ring pain, with the load and posture events that set it "
         "off and the positions that settle it."
@@ -230,7 +234,7 @@ LOW_BACK_GIRDLE = Profile(
 
 SHOULDER_NECK = Profile(
     key="shoulder_neck",
-    label="Shoulder, neck and carrying posture",
+    label="Shoulder & neck",
     blurb=(
         "Shoulder and neck pain - feeding posture, one-side carrying, desk "
         "hours - and the small strength work that holds the shoulder blade."
@@ -287,7 +291,7 @@ SHOULDER_NECK = Profile(
 
 HIP_KNEE = Profile(
     key="hip_knee",
-    label="Hip, knee and returning to running",
+    label="Hip & knee",
     blurb=(
         "Load management for hip and knee pain: what you ran or lifted, how it "
         "reacted, and when the reaction came."
