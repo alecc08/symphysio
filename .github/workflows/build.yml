@@ -107,9 +107,18 @@ jobs:
         run: |
           tag=$(printf '%s\n' "$TAGS" | grep -v ':latest$' | head -1)
           echo "verifying $tag claims $WANT"
+          # A named volume for /data, for the same reason ci.yml's smoke test uses
+          # one: the image runs as uid 10001 and refuses to start when its database
+          # path is not writable (`sqlite3.OperationalError: unable to open database
+          # file`, exit 3). Without this mount the step verifies nothing and fails,
+          # which is exactly what it had been doing on every build since it was
+          # written - the push above succeeded, so an image existed while this job
+          # was red. The flags otherwise mirror docker-compose.yml.
+          docker volume create symphysio-verify-data
           docker run -d --name verify -p 8090:8000 \
             --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
             --user 10001 --cap-drop ALL --security-opt no-new-privileges \
+            -v symphysio-verify-data:/data \
             "$tag"
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8090/healthz >/dev/null; then ok=1; break; fi
@@ -120,3 +129,9 @@ jobs:
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')
           docker logs verify
           test "$api" = "$WANT"
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f verify >/dev/null 2>&1 || true
+          docker volume rm symphysio-verify-data >/dev/null 2>&1 || true
